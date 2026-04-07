@@ -1,4 +1,4 @@
-import type { ChatMessage, LlmClient } from './types';
+import type { ChatMessage, CompleteJsonOptions, LlmClient } from './types';
 
 type CreateClientOptions = {
   apiKey: string;
@@ -18,13 +18,14 @@ function normalizeBaseUrl(url: string): string {
 export function createOpenAiCompatibleClient(opts: CreateClientOptions): LlmClient {
   const base = normalizeBaseUrl(opts.baseUrl);
   return {
-    async completeJson(messages: ChatMessage[]): Promise<string> {
+    async completeJson(messages: ChatMessage[], options?: CompleteJsonOptions): Promise<string> {
       const res = await fetch(`${base}/v1/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${opts.apiKey}`,
         },
+        signal: options?.signal,
         body: JSON.stringify({
           model: opts.model,
           messages,
@@ -50,10 +51,11 @@ export function createOpenAiCompatibleClient(opts: CreateClientOptions): LlmClie
 export function createProxyLlmClient(proxyPath: string): LlmClient {
   const path = proxyPath.startsWith('/') ? proxyPath : `/${proxyPath}`;
   return {
-    async completeJson(messages: ChatMessage[]): Promise<string> {
+    async completeJson(messages: ChatMessage[], options?: CompleteJsonOptions): Promise<string> {
       const res = await fetch(path, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: options?.signal,
         body: JSON.stringify({
           messages,
           response_format: { type: 'json_object' },

@@ -18,8 +18,13 @@ Rules:
 - One or two sentences max in "sentence" (prefer one).
 - Be honest: set confidence low if unsure.`;
 
-function userPayload(lists: WordLists): string {
-  return `Nouns:\n${wordsToPromptLines(lists.nouns)}\n\nAdjectives:\n${wordsToPromptLines(lists.adjectives)}\n\nVerbs:\n${wordsToPromptLines(lists.verbs)}\n\nWrite the JSON now.`;
+function userPayload(lists: WordLists, themeLabel?: string): string {
+  const themeLine = themeLabel
+    ? `Learner theme focus: "${themeLabel}". Prefer vocabulary and situations that fit this theme.\n\n`
+    : '';
+  return `${themeLine}Nouns:\n${wordsToPromptLines(lists.nouns)}\n\nAdjectives:\n${wordsToPromptLines(
+    lists.adjectives,
+  )}\n\nVerbs:\n${wordsToPromptLines(lists.verbs)}\n\nWrite the JSON now.`;
 }
 
 function repairMessage(badSnippet: string): string {
@@ -43,22 +48,26 @@ function validateRawModelOutput(raw: string):
   }
 }
 
-export async function generateSentenceFromVocab(lists: WordLists): Promise<SentenceGeneration> {
+export async function generateSentenceFromVocab(
+  lists: WordLists,
+  options?: { themeLabel?: string },
+): Promise<SentenceGeneration> {
   if (lists.nouns.length === 0 || lists.verbs.length === 0) {
     throw new Error('Add at least one noun and one verb before generating.');
   }
 
+  const user = userPayload(lists, options?.themeLabel);
   const client = getLlmClient();
   let raw = await client.completeJson([
     { role: 'system', content: SYSTEM },
-    { role: 'user', content: userPayload(lists) },
+    { role: 'user', content: user },
   ]);
 
   let checked = validateRawModelOutput(raw);
   if (!checked.ok) {
     raw = await client.completeJson([
       { role: 'system', content: SYSTEM },
-      { role: 'user', content: userPayload(lists) },
+      { role: 'user', content: user },
       { role: 'user', content: repairMessage(raw) },
     ]);
     checked = validateRawModelOutput(raw);
