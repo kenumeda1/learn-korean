@@ -1,206 +1,97 @@
-# Language Helper — product plan (draft)
+# Language Helper — experience plan (design review target)
 
-**Branch:** master  
-**Last updated:** 2026-04-06
+**Last updated:** 2026-04-08  
+**Design system:** `DESIGN.md` (Fluent Sky)
 
-## Premises (confirm or correct)
+## North star
 
-1. **Learner-first:** The primary user is a Korean language learner who wants to collect vocabulary by part of speech and generate practice sentences from that bank.
-2. **LLM is required:** Classification and sentence generation depend on an LLM; offline-only mode is out of scope for v1.
-3. **Trust boundary:** In development, BYOK in `localStorage` is acceptable with explicit opt-in; any shared or production deployment must route LLM calls through a same-origin proxy so the browser never holds long-lived provider secrets for strangers.
-4. **Single-page app:** One React SPA, Vite, client persistence via `localStorage` is sufficient until multi-device sync is explicitly prioritized.
+**Who:** English-speaking adults learning **Korean**.  
+**Job:** Turn **words they are studying** into **real Korean usage** they can practice, not just isolated glosses.  
+**Outcome:** After a short session, the learner has **added vocabulary** and **engaged with a sentence** built from that vocabulary, so they start to see *how* words combine—not only *what* they mean.
 
 ## Problem
 
-Learners accumulate words ad hoc. The app should make it fast to type a Korean token, see a suggested part of speech (with confidence), override when the model is wrong, add to a structured bank, and generate sentences that exercise that bank.
+“I’m learning new words, but I don’t know how to use them.” Word lists and flashcards leave a **usage gap**. This app closes it by making a **practice sentence** (from the learner’s own bank) the natural next step after collecting words.
 
-## Current implementation (inventory)
+## Product promise (one sentence)
 
-- **Word input UX:** Debounced classify (~420ms), Enter triggers classify without saving; explicit POS choice + Add (and ⌘/Ctrl+Enter) commits to bank; max 100 words; dedupe by `pos:text`.
-- **Persistence:** `language-helper:vocab` v2 JSON in `localStorage`; legacy textarea format migrates once; generation `language-helper:history` capped at 20.
-- **LLM boundary:** `getLlmClient()` in `src/llm/getLlmClient.ts` — `VITE_LLM_PROXY_PATH` → `createProxyLlmClient`; else BYOK + optional `VITE_OPENAI_*` env. Matches TODOS P1 intent; production proxy route may still be unimplemented in repo.
-- **Classification:** `classifyKoreanWord` with Zod schema, JSON repair pass on bad output.
-- **Other:** Sentence generation via `generateSentence` (existing pipeline).
+**Add Korean words you care about → the app stores them with part-of-speech and gloss → you generate a sentence from your library → you study Korean first and reveal English when you choose.**
 
-## Goals (from TODOS, prioritized)
+## Core journey (happy path)
 
-| Priority | Item | Definition of done |
-|----------|------|-------------------|
-| P1 | Prod proxy | Document `VITE_LLM_PROXY_PATH`; ship minimal API route or worker that forwards to provider with server-side key; verify app works with proxy only (no BYOK) in prod-like build. |
-| P2 | Golden prompts | `eval/prompts/` + fixtures; tests for parser/Zod; optional live eval flag. |
-| P3 | CSP + headers | Document and apply CSP for static hosting before public URL. |
+| Step | User does | User sees | Emotional beat |
+|------|-----------|-----------|----------------|
+| 1 | Opens app | Library bar, word field, POS filters, word grid | “This is my workspace.” |
+| 2 | Types a Korean word | Debounced classification: gloss, suggested POS, confidence | “It understands this word.” |
+| 3 | Adds word (Add or ⌘/Ctrl+Enter) | Card in grid with Korean, English gloss when available, POS tag | “It’s in my bank.” |
+| 4 | Adds more words (≥1 noun + ≥1 verb) | Filters help scan by POS | “I can build a usable set.” |
+| 5 | Clicks **Generate sentence** | New **Recent sentence**: Korean line; English **hidden** until eye control | “I read Korean before peeking.” |
+| 6 | Toggles eye | English translation appears | “I check myself.” |
+| 7 | Manages libraries | Create (name first), rename, delete, switch; snapshots / archive under Library backup | “I can organize and recover.” |
 
-## Implementation approach (locked — /plan-ceo-review 2026-04-06)
+## Information architecture (single page, top → bottom)
 
-**Approach B — Balanced:** Same-origin proxy + README env table; **Vitest** for `storage` / `wordBank` / `getLlmClient` branches; execute **`docs/test-plan.md` P0/P1**; add **`eval/prompts`** skeleton. **No eval CI gate in M1** (manual QA + unit/integration/RTL only until **M3**).
+1. Eyebrow + title + hero (how to type, classify, add, generate).
+2. **Library** toolbar (select library, create with inline name step, ⋯ rename/delete).
+3. **Word input** shell (icon, field, Add) + classify hint + live classify status.
+4. **POS filter** pills (All / Nouns / Verbs / Adjectives) for the grid only.
+5. **Word bank** grid (streamlined cards: POS, KO, EN gloss, remove).
+6. **Generate sentence** (primary CTA + hint when noun/verb missing).
+7. **Library backup** (snapshots, archive) in a collapsed details block.
+8. **Recent sentences** (clear all; cards with optional library line, **Latest** badge, Korean, gated English gloss, caveats).
+9. **Model access** (dev/BYOK) in collapsed details.
+10. Footer note (word count cap, generation uses whole library).
 
-**Cherry-picks accepted:** (1) **M1 writing-lab slice** aligned with existing `generateSentence` JSON shape — ship fields that exist, stub/hide the rest with honest copy; (2) **RTL first** for word-add flow (**happy + classify error**); Playwright only if RTL cannot cover keyboard/focus.
+## “Learn deeply” → concrete UI behaviors
 
-**Cherry-picks skipped for v0:** Named provider error taxonomy (401/429/timeout copy + tests); PWA/install; word-bank export — see **TODOS.md** deferred items.
+| Principle | Behavior |
+|-----------|----------|
+| **Usage over lists** | Generate is the main bridge from words → sentence; disabled until bank has at least one noun and one verb, with a short hint why. |
+| **Effort before answer** | Recent sentences: English gloss **off by default**; eye icon reveals it (`aria-expanded`). |
+| **Grounded in your data** | Sentence is generated from **all words in the active library** (same rules as model prompt). |
+| **Honest AI** | Classifier shows confidence and note; add uses classifier POS when it matches the field (otherwise noun if classification not ready—document in hero). |
+| **Ownership** | Libraries, local persistence, snapshots and archive for mistakes. |
+| **Name before create** | New library uses an inline name field + Create/Cancel (no anonymous duplicate libraries). |
 
-**Critical path:** M1 writing-lab UI in **dev** uses BYOK/env. **Prod-like proxy-only verification** is **M2**; do not block M1 on deploying the worker.
+## Interaction states (what the user sees)
 
-## Explicitly NOT in scope (near term)
+| Surface | Loading | Empty | Error | Success |
+|---------|---------|-------|-------|---------|
+| Classify | “Checking…” | Placeholder / “Type or…” | Red inline error | Gloss + POS + confidence |
+| Word grid | — | “No words in this view…” | — | Cards |
+| Generate | Button loading state | — | Error alert | History prepend |
+| New library form | — | Empty name field | Inline “enter a name” | New library active |
+| Recent sentences | — | “No sentences yet…” | — | Korean + eye for gloss |
 
-- User accounts, sync, or backend DB.
-- Non-Korean target languages.
-- Full Wiktionary-grade POS disambiguation without LLM.
-- **v0:** PWA / install (desktop-only until revisited).
-- **v0:** Word-bank export (siloed local data is intentional until users ask).
-- **v0:** Per-status provider error map (401/429/timeout); generic failure copy is accepted tech debt — promote when shipping beyond solo.
+## Responsive and accessibility (targets)
 
-## Milestones
+- **Keyboard:** Word field Enter vs ⌘/Ctrl+Enter; Escape/Enter on new-library name field; focus management after add; filter **radiogroup** with `aria-checked`.
+- **Touch:** Toolbar controls and filters meet ~38px+ vertical targets where possible.
+- **Screen readers:** `aria-live` on classify status; toolbar and gloss toggle labels; `aria-invalid` on library name when needed.
 
-1. **M1 — Spec + writing-lab slice + tests**
-   - **Word flow:** Matches **TODOS.md § Spec — word input, Enter, and Add** (debounce, Enter, Add, ⌘/Ctrl+Enter, focus return, dedupe, cap).
-   - **Writing-lab slice:** Learner Korean text in → structured feedback UI; states: **loading**, **empty prompt**, **error**, **low-confidence** warning (confidence below app constant, e.g. `0.72`, or ambiguous POS — non-blocking, manual override stays).
-   - **Shape:** Reuse **`generateSentence` / existing sentence feedback JSON** — no parallel LLM surface. Zod-validate; repair path logged in dev; one actionable user line on failure (generic OK for v0).
-   - **Tests:** `docs/test-plan.md` **P0/P1** green; **RTL** word-add **happy + classify error** green.
-   - **Checklist:** See **M1 acceptance checklist** below.
-2. **M2 — Proxy path:** Implement + document proxy; treat BYOK as dev-only in README; prod-like build works proxy-only.
-3. **M3 — Evals:** Golden set for classification JSON (and sentence schema if stable); optional live eval / CI gate from here on.
-4. **M4 — Hardening:** CSP, dependency audit note, broader error copy pass (can incorporate deferred provider status map).
+## Design system
 
-### M1 acceptance checklist (engineering)
+Implementations follow **`DESIGN.md`** and `src/index.css` tokens (Fluent Sky). No parallel palette without updating `DESIGN.md`.
 
-- [ ] TODOS word-flow spec behaviors verified in `App.tsx`.
-- [ ] Writing-lab panel: loading, empty, error, low-confidence warning, success — real model output or sections hidden (no fake data).
-- [ ] LLM response Zod-validated; repair path observable in dev.
-- [ ] `docs/test-plan.md` P0/P1 tests green; RTL word-add happy + classify error green.
+## Explicitly NOT in this experience plan
 
-**CEO plan artifact:** `~/.gstack/projects/languagehelper/ceo-plans/2026-04-06-language-helper-selective.md`
+- Spaced repetition, quizzes, CEFR levels, or streaks.  
+- Listening/speaking drills or romanization as the primary path.  
+- Accounts, sync, or shared libraries.  
+- Languages other than Korean for the learner path.
 
-## Risks
+## Engineering pointer
 
-- **Key leak:** BYOK in `localStorage` is XSS-sensitive; README must warn; prod must use proxy.
-- **Ambiguous POS:** UX must keep manual override obvious (already in spec).
-- **Provider outages:** Surface actionable errors (HTTP message / proxy error) without dumping raw stack traces to UI.
+Code: `src/App.tsx`, `src/lib/*`, `src/llm/*`, `DESIGN.md`.  
+The previous long plan (milestones, autoplan tables, CEO lock-in) is archived as **`PLAN.archive-2026-04-06.md`**.
 
----
+## Open questions (for `/plan-design-review`)
 
-<!-- /autoplan: review appended below; restore point N/A for first draft -->
-
-## /autoplan review (2026-04-06)
-
-**Mode:** single-reviewer (Codex CLI and separate Claude subagent not run in this session). Treat outside-voice rows as **N/A**.
-
-### CEO DUAL VOICES — CONSENSUS TABLE
-
-| Dimension | Claude | Codex | Consensus |
-|-----------|--------|-------|-----------|
-| Premises valid? | Plausible for v1; #3 needs enforcement in docs + deploy | N/A | **PENDING USER** (premise gate) |
-| Right problem? | Yes for solo learner tool | N/A | Align |
-| Scope calibration? | M1–M4 are boilable; sync/accounts correctly deferred | N/A | Align |
-| Alternatives explored? | Could add “no-LLM heuristic POS” — deferred (complexity) | N/A | Defer |
-| Competitive risks? | Generic; differentiation is UX + eval discipline | N/A | Monitor |
-| 6-month trajectory? | Proxy + evals + CSP = reasonable foundation | N/A | Align |
-
-**NOT in scope (CEO):** Multi-tenant hosted BYOK, mobile apps, curriculum partnerships (defer to TODOS if needed).
-
-**What already exists:** `getLlmClient`, word bank v2, classify + Zod, history, generate path — **P1 seam exists in code; missing piece is likely deployable proxy + docs.**
-
-**Dream state delta:** 12-month ideal might include spaced repetition and cross-device lists; this plan stops at sentence practice + solid LLM boundary.
-
-### Design (UI scope — yes)
-
-**Litmus (single reviewer):**
-
-| Dimension | Score / note |
-|-----------|----------------|
-| Hierarchy | Input + suggestion + POS chips + Add should stay above the fold; verify on small laptop height. |
-| States | Specify: classify loading, empty suggestion, low confidence, classify error, proxy/key missing. |
-| Journey | Type → see suggestion → adjust POS → Add → see chip in list; emotional break if “Add” feels inert (focus + hint). |
-| Specificity | TODOS spec is concrete; ensure ⌘Enter matches button behavior in code review. |
-| Ambiguity debt | BYOK panel vs env key: one paragraph in UI help to avoid “why doesn’t it work”. |
-
-**Auto-decisions:** Require non-blocking inline error for missing API key (catch `getLlmClient` throw path). **TASTE:** Whether BYOK toggle is prominent vs buried under “Advanced” (recommend: advanced collapsible to reduce accidental key storage).
-
-### ENG DUAL VOICES — CONSENSUS TABLE
-
-| Dimension | Claude | Codex | Consensus |
-|-----------|--------|-------|-----------|
-| Architecture sound? | Client + thin proxy pattern is right | N/A | Align |
-| Tests sufficient? | Gap: no automated tests cited for classify or storage migration | N/A | **Gap** |
-| Performance? | Debounce + abort on new input — good; watch LLM double-call on repair | N/A | Align |
-| Security? | BYOK XSS risk documented; proxy required for prod | N/A | Align |
-| Error paths? | Validate user-facing messages for 401/429 from provider | N/A | **Check** |
-| Deploy risk? | Proxy not in repo may block “production-like” CI | N/A | **Implement or stub** |
-
-**Architecture (ASCII)**
-
-```
-[App.tsx] → classifyKoreanWord / generateSentence
-       → getLlmClient()
-              ├─ VITE_LLM_PROXY_PATH → fetch(same-origin) → [server TBD]
-              └─ BYOK / env → OpenAI-compatible HTTPS
-       → storage.ts (localStorage vocab v2, history)
-```
-
-**Test diagram (gaps)**
-
-| Codepath | Suggested test | Exists? |
-|----------|----------------|---------|
-| Legacy vocab → v2 migration | Unit: `migrateLegacy` + round-trip | **?** add if missing |
-| `dedupeWords` / MAX_WORDS | Unit | **?** |
-| `classifyKoreanWord` Zod fail → repair | Integration mock client | **No** — P2 |
-| `getLlmClient` branches | Unit with env mocks | **?** |
-
-**Test plan artifact:** `~/.gstack/projects/language-helper/master-test-plan-20260406.md` — *write deferred* if `~/.gstack` unavailable; see Decision log.
-
-### DX review (conditional — yes: env vars, proxy, BYOK)
-
-**DX consensus (single reviewer):**
-
-| Dimension | Note |
-|-----------|------|
-| TTHW | Target &lt; 5 min: `npm install`, `npm run dev`, set BYOK or `VITE_OPENAI_API_KEY`, works. |
-| Naming | `VITE_LLM_PROXY_PATH`, `VITE_OPENAI_*` are guessable; document in README. |
-| Errors | `getLlmClient` throw message is actionable — keep in sync with README. |
-| Docs | README missing from repo root — **add** getting started + security note. |
-| Upgrade | No breaking migration yet; when proxy lands, document env transition. |
-
-**Developer journey (short):** Clone → install → dev server → choose BYOK or env → classify word → add → generate.
-
-### Cross-phase themes
-
-- **Prod readiness vs dev BYOK** appears in CEO, Eng, DX: same fix — proxy + README contract.
-- **Testing** appears in Eng and P2 TODOS: golden prompts are the right next artifact.
-
-### Decision Audit Trail
-
-<!-- AUTONOMOUS DECISION LOG -->
-| # | Phase | Decision | Classification | Principle | Rationale | Rejected |
-|---|-------|----------|----------------|-----------|----------|----------|
-| 1 | CEO | Defer non-LLM heuristic POS | Mechanical | P4 DRY | Duplicates LLM value; high maintenance | Heuristic classifier |
-| 2 | CEO | Keep milestones M1–M4 | Mechanical | P1 completeness | Covers boundary, evals, hardening | Larger scope (accounts) |
-| 3 | Design | BYOK under “Advanced” collapsible | Taste | P5 explicit | Reduces casual key storage | Prominent toggle |
-| 4 | Eng | Prioritize unit tests for storage + dedupe before live LLM eval | Mechanical | P1 | Fast feedback | Only manual QA |
-| 5 | DX | Add root README with env table | Mechanical | P1 | TTHW blocker | Defer docs |
-
-### Pre-gate verification checklist
-
-- [x] Plan premises stated
-- [x] CEO / Design / Eng / DX sections present (dual voice marked N/A)
-- [x] Architecture diagram
-- [x] Test diagram with gaps
-- [x] Test plan in repo: `docs/test-plan.md`
-- [x] Decision audit trail started
-
-### User Challenges
-
-None (single reviewer; no second model to agree on “change user direction”).
-
-### Final approval gate (your turn)
-
-**Summary:** This plan nails a learner SPA with a clean LLM seam in code; **ship risk** is documented proxy + tests + README. **TASTE:** BYOK prominence (recommend Advanced).
-
-**RECOMMENDATION:** Approve premises #1–4 as written unless you want offline or multi-device in scope.
-
-**Options:**
-
-- **A)** Approve plan + premises; proceed implementation in milestone order.
-- **B)** Override: specify premise or taste changes (e.g. BYOK always visible).
-- **C)** Revise plan text in `PLAN.md` and re-review a subsection.
+1. Hero copy: should we **name English learners** explicitly without adding noise?  
+2. After a good generation: is **“Generate again”** (same bank) worth a first-class control, or clutter?  
+3. When generate is disabled: is the **hint** warm and actionable enough on first visit?  
+4. Word cards: should we ever show **“appeared in latest sentence”** to tie grid and history?  
+5. Classifier wrong: today there is **no manual POS picker**; is that acceptable v1 or do we need a minimal override?
 
 ---
 
@@ -208,10 +99,9 @@ None (single reviewer; no second model to agree on “change user direction”).
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
-| CEO Review | /plan-ceo-review | Scope & strategy | 2 | **LOCKED** | SELECTIVE + Approach B; 2 cherry-picks accepted, 3 skipped; CEO plan on disk |
-| Codex Review | /codex review | Independent 2nd opinion | 0 | — | Not run (Codex not on PATH) |
-| Eng Review | /autoplan, /plan-eng-review | Architecture & tests | 1+ | Re-run advised | Stale vs working tree until M1 lands |
-| Design Review | /autoplan | UI/UX | 1 | — | Consider /plan-design-review if M1 UI grows |
-| DX Review | /autoplan | Developer experience | 1 | — | README + env table still P0 |
+| CEO Review | `/plan-ceo-review` | Scope and strategy | — | — | See archive if needed |
+| Eng Review | `/plan-eng-review` | Architecture and tests | — | — | See archive |
+| Design Review | `/plan-design-review` | UI/UX vs this plan | 0 | — | Run review to fill |
+| DX Review | `/plan-devex-review` | Dev onboarding | — | — | — |
 
-**VERDICT:** **CEO scope locked** — implement M1–M4 per milestones above; **re-run Eng Review** on latest diff before ship.
+**VERDICT:** Pending design review against this document.

@@ -7,8 +7,6 @@ export type StoredWord = {
   pos: WordPos;
   /** English gloss; optional for entries saved before this field existed. */
   en?: string;
-  /** Global theme preset ids; empty means untagged. */
-  themeIds: string[];
 };
 
 export const MAX_WORDS = 100;
@@ -23,11 +21,6 @@ export function wordListsFromBank(words: StoredWord[]): WordLists {
     else verbs.push(w.text);
   }
   return { nouns, adjectives, verbs };
-}
-
-/** Words that include this theme id (for generation). */
-export function wordsMatchingTheme(words: StoredWord[], themeId: string): StoredWord[] {
-  return words.filter((w) => (w.themeIds?.length ? w.themeIds.includes(themeId) : false));
 }
 
 export function bankKey(text: string, pos: WordPos): string {

@@ -56,7 +56,7 @@ These are the **authoritative** Fluent Sky tokens.
 | `--accent-soft` | `#dbeafe` | Icon button hover, “latest” badges, focus-adjacent fills. |
 | `--pill-noun` / `--pill-noun-text` | `#bfdbfe` / `#1e40af` | Noun POS tag. |
 | `--pill-verb` / `--pill-verb-text` | `#ddd6fe` / `#5b21b6` | Verb POS tag. |
-| `--pill-adj` / `--pill-adj-text` | `#93c5fd` / `#1d4ed8` | Adjective POS tag. |
+| `--pill-adj` / `--pill-adj-text` | `#a7f3d0` / `#047857` | Adjective POS tag (emerald; distinct from noun blue). |
 | `--progress-empty` | `#e5e7eb` | Progress track empty segments. |
 | *(sentence tag)* | bg `#e0e7ff`, text `#3730a3` | `.tag--sentence` in CSS. |
 

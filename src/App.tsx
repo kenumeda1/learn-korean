@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { classifyKoreanWord } from './lib/classifyWord';
+import { checkKoreanTranslation } from './lib/checkKoreanTranslation';
 import { generateSentenceFromVocab } from './lib/generateSentence';
 import {
   addWord,
@@ -8,11 +9,11 @@ import {
   purgeArchiveEntry,
   restoreFromArchive,
   restoreSnapshot,
-  setWordThemes,
   type AppStateV3,
   type Library,
 } from './lib/appState';
 import {
+  appendClassifyReport,
   clearHistory,
   loadAppState,
   loadHistory,
@@ -20,7 +21,9 @@ import {
   saveAppState,
   type HistoryEntry,
 } from './lib/storage';
-import { MAX_WORDS, wordListsFromBank, wordsMatchingTheme, type StoredWord } from './lib/wordBank';
+import { MAX_WORDS, wordListsFromBank, type StoredWord } from './lib/wordBank';
+import type { SentenceGeneration } from './schema/sentenceGeneration';
+import type { TranslationCheck } from './schema/translationCheck';
 import type { WordClassification, WordPos } from './schema/wordClassification';
 import { llmStorageKeys } from './llm/getLlmClient';
 
@@ -48,44 +51,19 @@ function posFilterLabel(pos: WordPos): string {
   return `${POS_FILTER_EN[pos]} (${POS_LABEL_KO[pos]})`;
 }
 
-function posRoleButtonLabel(pos: WordPos): string {
-  return `${POS_LABEL[pos]} (${POS_LABEL_KO[pos]})`;
-}
-
-function listsBlockedHint(
-  lists: ReturnType<typeof wordListsFromBank>,
-  themeLabel: string | null,
-  hasActiveTheme: boolean,
-): string | null {
-  if (!hasActiveTheme) {
-    return 'Choose a theme for generation first.';
-  }
+function listsBlockedHint(lists: ReturnType<typeof wordListsFromBank>): string | null {
   const { nouns, verbs } = lists;
-  const label = themeLabel ?? 'this theme';
   if (nouns.length > 0 && verbs.length > 0) return null;
   if (nouns.length === 0 && verbs.length === 0) {
-    return `No words tagged “${label}” in this library. Tag some words with that theme, or pick another theme.`;
+    return 'Add at least one noun and one verb to generate a sentence.';
   }
   if (nouns.length === 0) {
-    return `Add at least one noun tagged “${label}”, or tag existing nouns with that theme.`;
+    return 'Add at least one noun before generating.';
   }
-  return `Add at least one verb tagged “${label}”, or tag existing verbs with that theme.`;
+  return 'Add at least one verb before generating.';
 }
 
 type GridFilter = 'all' | WordPos;
-
-function formatHistoryTime(ts: number): string {
-  try {
-    return new Date(ts).toLocaleString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return '';
-  }
-}
 
 function formatSnapshotTime(ts: number): string {
   try {
@@ -101,10 +79,38 @@ function formatSnapshotTime(ts: number): string {
   }
 }
 
-function confidenceLabel(c: WordClassification['confidence']): string {
-  if (c === 'high') return 'High confidence';
-  if (c === 'medium') return 'Medium confidence';
-  return 'Low confidence';
+/** Legacy history: Korean in `sentence`, English in `english_gloss`; no `korean_reference`. */
+function isLegacySentenceResult(r: SentenceGeneration): boolean {
+  if (r.korean_reference) return false;
+  return /[\uAC00-\uD7AF]/.test(r.sentence);
+}
+
+function verdictLabel(v: TranslationCheck['verdict']): string {
+  if (v === 'good') return 'Good match';
+  if (v === 'close') return 'Close';
+  return 'Needs work';
+}
+
+/** Display-only: capitalize first character of English gloss (learner-facing line). */
+function capitalizeEnglishGloss(s: string): string {
+  if (!s) return s;
+  const c = s.charAt(0);
+  const rest = s.slice(1);
+  return c.toLocaleUpperCase() + rest;
+}
+
+/** Comma-separated dictionary glosses: capitalize each sense (e.g. "shape, appearance, form"). */
+function formatWordEnGloss(s: string): string {
+  if (!s) return s;
+  return s
+    .split(',')
+    .map((part) => {
+      const t = part.trim();
+      if (!t) return '';
+      return capitalizeEnglishGloss(t);
+    })
+    .filter(Boolean)
+    .join(', ');
 }
 
 function isAbortError(e: unknown): boolean {
@@ -155,9 +161,41 @@ function RemoveIcon() {
   );
 }
 
-function themeLabelsForWord(word: StoredWord, presets: { id: string; label: string }[]): string {
-  const parts = word.themeIds.map((id) => presets.find((p) => p.id === id)?.label).filter(Boolean) as string[];
-  return parts.length ? parts.join(' · ') : '';
+function EyeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function EyeOffIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M10.733 5.076A10.744 10.744 0 0 1 12 5c7 0 10 7 10 7a13.38 13.38 0 0 1-1.458 2.338M6.52 6.52A13.9 13.9 0 0 0 2 12s3.5 7 10 7a9.74 9.74 0 0 0 5.39-1.607" />
+      <path d="M14.12 14.12A3 3 0 0 1 9.88 9.88" />
+      <path d="M1 1l22 22" />
+    </svg>
+  );
+}
+
+function ToolbarPlusIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" aria-hidden>
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}
+
+function ToolbarMoreIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden>
+      <circle cx="5.5" cy="12" r="1.65" />
+      <circle cx="12" cy="12" r="1.65" />
+      <circle cx="18.5" cy="12" r="1.65" />
+    </svg>
+  );
 }
 
 export default function App() {
@@ -169,9 +207,7 @@ export default function App() {
   const wordBank = activeLibrary?.words ?? [];
 
   const [wordInput, setWordInput] = useState('');
-  const [selectedPos, setSelectedPos] = useState<WordPos>('noun');
   const [gridFilter, setGridFilter] = useState<GridFilter>('all');
-  const [themeGridFilter, setThemeGridFilter] = useState<'all' | string>('all');
   const [classification, setClassification] = useState<WordClassification | null>(null);
   const [classifyBusy, setClassifyBusy] = useState(false);
   const [classifyError, setClassifyError] = useState<string | null>(null);
@@ -182,10 +218,25 @@ export default function App() {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [historyGlossVisible, setHistoryGlossVisible] = useState<Record<string, boolean>>({});
+  const [practiceById, setPracticeById] = useState<Record<string, string>>({});
+  const [checkById, setCheckById] = useState<Record<string, TranslationCheck | null>>({});
+  const [checkingId, setCheckingId] = useState<string | null>(null);
+  const [newLibraryOpen, setNewLibraryOpen] = useState(false);
+  const [newLibraryName, setNewLibraryName] = useState('');
+  const [newLibraryError, setNewLibraryError] = useState<string | null>(null);
+  const [renameLibraryOpen, setRenameLibraryOpen] = useState(false);
+  const [renameLibraryName, setRenameLibraryName] = useState('');
+  const [renameLibraryError, setRenameLibraryError] = useState<string | null>(null);
+  const [classifyReportOpen, setClassifyReportOpen] = useState(false);
+  const [classifyReportNote, setClassifyReportNote] = useState('');
+  const [classifyReportThanks, setClassifyReportThanks] = useState(false);
 
   const wordInputRef = useRef<HTMLInputElement>(null);
+  const newLibraryInputRef = useRef<HTMLInputElement>(null);
+  const renameLibraryInputRef = useRef<HTMLInputElement>(null);
+  const libraryMenuRef = useRef<HTMLDetailsElement>(null);
   const inputSyncRef = useRef(wordInput);
-  const userOverrodePosRef = useRef(false);
   const classifySeqRef = useRef(0);
   const classifiedForRef = useRef<string | null>(null);
   const inFlightTokenRef = useRef<string | null>(null);
@@ -198,6 +249,16 @@ export default function App() {
   }, [wordInput]);
 
   useEffect(() => {
+    if (!newLibraryOpen) return;
+    queueMicrotask(() => newLibraryInputRef.current?.focus());
+  }, [newLibraryOpen]);
+
+  useEffect(() => {
+    if (!renameLibraryOpen) return;
+    queueMicrotask(() => renameLibraryInputRef.current?.focus());
+  }, [renameLibraryOpen]);
+
+  useEffect(() => {
     setHistory(loadHistory());
     setByokEnabled(localStorage.getItem(llmStorageKeys.byokEnabled) === 'true');
     const k = localStorage.getItem(llmStorageKeys.apiKey);
@@ -207,6 +268,12 @@ export default function App() {
   useEffect(() => {
     saveAppState(appState);
   }, [appState]);
+
+  useEffect(() => {
+    setClassifyReportOpen(false);
+    setClassifyReportNote('');
+    setClassifyReportThanks(false);
+  }, [wordInput]);
 
   useEffect(() => {
     localStorage.setItem(llmStorageKeys.byokEnabled, byokEnabled ? 'true' : 'false');
@@ -225,33 +292,16 @@ export default function App() {
     }));
   }, []);
 
-  const activeThemeLabel = useMemo(() => {
-    if (!appState.activeThemeId) return null;
-    return appState.themePresets.find((t) => t.id === appState.activeThemeId)?.label ?? null;
-  }, [appState.activeThemeId, appState.themePresets]);
-
-  const wordsForGeneration = useMemo(() => {
-    if (!appState.activeThemeId) return [] as StoredWord[];
-    return wordsMatchingTheme(wordBank, appState.activeThemeId);
-  }, [wordBank, appState.activeThemeId]);
-
-  const lists = useMemo(() => wordListsFromBank(wordsForGeneration), [wordsForGeneration]);
+  const lists = useMemo(() => wordListsFromBank(wordBank), [wordBank]);
 
   const filteredBank = useMemo(() => {
     let rows = wordBank;
     if (gridFilter !== 'all') rows = rows.filter((w) => w.pos === gridFilter);
-    if (themeGridFilter !== 'all') {
-      rows = rows.filter((w) => w.themeIds?.includes(themeGridFilter));
-    }
     return rows;
-  }, [wordBank, gridFilter, themeGridFilter]);
+  }, [wordBank, gridFilter]);
 
-  const canGenerate =
-    !!appState.activeThemeId && lists.nouns.length > 0 && lists.verbs.length > 0 && !generating;
-  const generateHint = useMemo(
-    () => listsBlockedHint(lists, activeThemeLabel, !!appState.activeThemeId),
-    [lists, activeThemeLabel, appState.activeThemeId],
-  );
+  const canGenerate = lists.nouns.length > 0 && lists.verbs.length > 0 && !generating;
+  const generateHint = useMemo(() => listsBlockedHint(lists), [lists]);
 
   const runClassify = useCallback(async (token: string) => {
     const t = token.trim();
@@ -279,9 +329,6 @@ export default function App() {
       if (inputSyncRef.current.trim() !== t) return;
       setClassification(result);
       classifiedForRef.current = t;
-      if (!userOverrodePosRef.current) {
-        setSelectedPos(result.pos);
-      }
     } catch (e) {
       if (isAbortError(e)) return;
       if (seq !== classifySeqRef.current) return;
@@ -316,20 +363,6 @@ export default function App() {
     return () => window.clearTimeout(handle);
   }, [wordInput, runClassify]);
 
-  const toggleWordTheme = useCallback(
-    (wordId: string, themeId: string) => {
-      updateActiveLibrary((lib) => {
-        const w = lib.words.find((x) => x.id === wordId);
-        if (!w) return lib;
-        const nextIds = w.themeIds.includes(themeId)
-          ? w.themeIds.filter((x) => x !== themeId)
-          : [...w.themeIds, themeId];
-        return setWordThemes(lib, wordId, nextIds);
-      });
-    },
-    [updateActiveLibrary],
-  );
-
   const handleAdd = useCallback(() => {
     const t = wordInput.trim();
     setAddHint(null);
@@ -349,14 +382,12 @@ export default function App() {
     }
 
     const before = lib.words.length;
-    const enGloss =
-      classification && classifiedForRef.current === t && !classifyError
-        ? classification.en.trim() || undefined
-        : undefined;
+    const classified =
+      classification && classifiedForRef.current === t && !classifyError ? classification : null;
+    const enGloss = classified ? classified.en.trim() || undefined : undefined;
+    const posForAdd: WordPos = classified ? classified.pos : 'noun';
 
-    const tid = appStateRef.current.activeThemeId;
-    const tagIds = tid ? [tid] : [];
-    const nextLib = addWord(lib, t, selectedPos, tagIds, enGloss);
+    const nextLib = addWord(lib, t, posForAdd, enGloss);
     if (nextLib.words.length === before) {
       setAddHint('That word is already in your list with the same role.');
       return;
@@ -376,10 +407,8 @@ export default function App() {
     setClassifyBusy(false);
     classifiedForRef.current = null;
     inFlightTokenRef.current = null;
-    userOverrodePosRef.current = false;
-    setSelectedPos('noun');
     queueMicrotask(() => wordInputRef.current?.focus());
-  }, [wordInput, selectedPos, classification, classifyError]);
+  }, [wordInput, classification, classifyError]);
 
   const onKeyDownWord = useCallback(
     (e: KeyboardEvent<HTMLInputElement>) => {
@@ -401,26 +430,18 @@ export default function App() {
 
   const onGenerate = useCallback(async () => {
     setError(null);
-    const themeId = appStateRef.current.activeThemeId;
-    const theme = appStateRef.current.themePresets.find((x) => x.id === themeId);
-    if (!themeId || !theme) {
-      setError('Choose a theme for generation first.');
-      return;
-    }
     const sid = appStateRef.current.activeLibraryId;
     const lib = appStateRef.current.libraries.find((l) => l.id === sid);
     const libName = lib?.name ?? 'Library';
     setGenerating(true);
     try {
-      const result = await generateSentenceFromVocab(lists, { themeLabel: theme.label });
+      const result = await generateSentenceFromVocab(lists);
       const entry: HistoryEntry = {
         id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : String(Date.now()),
         ts: Date.now(),
         result,
         libraryId: sid,
         libraryName: libName,
-        themeId: theme.id,
-        themeLabel: theme.label,
       };
       prependHistory(entry);
       setHistory(loadHistory());
@@ -431,6 +452,35 @@ export default function App() {
     }
   }, [lists]);
 
+  const onCheckTranslation = useCallback(
+    async (entryId: string) => {
+      const text = practiceById[entryId]?.trim() ?? '';
+      if (!text) return;
+      const h = history.find((x) => x.id === entryId);
+      const ref = h?.result.korean_reference?.trim();
+      if (!h || !ref) {
+        setError('This entry has no model Korean reference. Generate a new sentence to use Check.');
+        return;
+      }
+      setCheckingId(entryId);
+      setError(null);
+      try {
+        const out = await checkKoreanTranslation({
+          englishPrompt: h.result.sentence,
+          referenceKorean: ref,
+          userKorean: text,
+          lists,
+        });
+        setCheckById((prev) => ({ ...prev, [entryId]: out }));
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Something went wrong');
+      } finally {
+        setCheckingId(null);
+      }
+    },
+    [history, practiceById, lists],
+  );
+
   const removeWord = useCallback((id: string) => {
     updateActiveLibrary((lib) => moveWordToArchive(lib, id));
   }, [updateActiveLibrary]);
@@ -439,26 +489,98 @@ export default function App() {
     setAppState((prev) => ({ ...prev, activeLibraryId: id }));
   }, []);
 
-  const onNewLibrary = useCallback(() => {
-    const name = window.prompt('Library name', 'New library')?.trim();
-    if (!name) return;
+  const openNewLibraryForm = useCallback(() => {
+    setRenameLibraryOpen(false);
+    setRenameLibraryName('');
+    setRenameLibraryError(null);
+    setNewLibraryError(null);
+    setNewLibraryName('');
+    setNewLibraryOpen(true);
+  }, []);
+
+  const cancelNewLibrary = useCallback(() => {
+    setNewLibraryOpen(false);
+    setNewLibraryName('');
+    setNewLibraryError(null);
+  }, []);
+
+  const commitNewLibrary = useCallback(() => {
+    const name = newLibraryName.trim();
+    if (!name) {
+      setNewLibraryError('Enter a library name before creating.');
+      return;
+    }
+    setNewLibraryError(null);
     const lib = createEmptyLibrary(name);
     setAppState((prev) => ({
       ...prev,
       libraries: [...prev.libraries, lib],
       activeLibraryId: lib.id,
     }));
+    setNewLibraryOpen(false);
+    setNewLibraryName('');
+  }, [newLibraryName]);
+
+  const onNewLibraryKeyDown = useCallback(
+    (e: KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        cancelNewLibrary();
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        commitNewLibrary();
+      }
+    },
+    [cancelNewLibrary, commitNewLibrary],
+  );
+
+  const cancelRenameLibrary = useCallback(() => {
+    setRenameLibraryOpen(false);
+    setRenameLibraryName('');
+    setRenameLibraryError(null);
   }, []);
 
-  const onRenameLibrary = useCallback(() => {
-    const cur = appStateRef.current.libraries.find((l) => l.id === appStateRef.current.activeLibraryId);
-    if (!cur) return;
-    const name = window.prompt('Rename library', cur.name)?.trim();
-    if (!name) return;
+  const commitRenameLibrary = useCallback(() => {
+    const name = renameLibraryName.trim();
+    if (!name) {
+      setRenameLibraryError('Enter a library name.');
+      return;
+    }
+    const id = appStateRef.current.activeLibraryId;
+    setRenameLibraryError(null);
+    setRenameLibraryOpen(false);
+    setRenameLibraryName('');
     setAppState((prev) => ({
       ...prev,
-      libraries: prev.libraries.map((l) => (l.id === cur.id ? { ...l, name: name.slice(0, 60) } : l)),
+      libraries: prev.libraries.map((l) => (l.id === id ? { ...l, name: name.slice(0, 60) } : l)),
     }));
+  }, [renameLibraryName]);
+
+  const onRenameLibraryKeyDown = useCallback(
+    (e: KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        cancelRenameLibrary();
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        commitRenameLibrary();
+      }
+    },
+    [cancelRenameLibrary, commitRenameLibrary],
+  );
+
+  const onRenameLibrary = useCallback(() => {
+    libraryMenuRef.current?.removeAttribute('open');
+    setNewLibraryOpen(false);
+    setNewLibraryName('');
+    setNewLibraryError(null);
+    const cur = appStateRef.current.libraries.find((l) => l.id === appStateRef.current.activeLibraryId);
+    if (!cur) return;
+    setRenameLibraryError(null);
+    setRenameLibraryName(cur.name);
+    setRenameLibraryOpen(true);
   }, []);
 
   const onDeleteLibrary = useCallback(() => {
@@ -484,6 +606,30 @@ export default function App() {
 
   const snapshotsNewestFirst = useMemo(() => [...(activeLibrary?.snapshots ?? [])].reverse(), [activeLibrary]);
 
+  const classifyReportEligible =
+    !!classification &&
+    !classifyBusy &&
+    wordInput.trim().length > 0 &&
+    classifiedForRef.current === wordInput.trim();
+
+  const submitClassifyReport = useCallback(() => {
+    const w = wordInput.trim();
+    if (!classification || !w || classifiedForRef.current !== w) return;
+    appendClassifyReport({
+      word: w,
+      en: classification.en,
+      pos: classification.pos,
+      note: classifyReportNote,
+    });
+    setClassifyReportThanks(true);
+    setClassifyReportOpen(false);
+    setClassifyReportNote('');
+  }, [wordInput, classification, classifyReportNote]);
+
+  const toggleHistoryGloss = useCallback((id: string) => {
+    setHistoryGlossVisible((prev) => ({ ...prev, [id]: !prev[id] }));
+  }, []);
+
   return (
     <div className="page">
       <p className="eyebrow">Language helper</p>
@@ -496,43 +642,134 @@ export default function App() {
           <span lang="ko">(동사)</span> as you type. Press <kbd>Enter</kbd> to classify.
         </p>
         <p>
-          Add with the button, or <kbd>⌘ Enter</kbd> / <kbd>Ctrl Enter</kbd> to add using the role you pick under the word box. Then build your library and generate a sentence.
+          Add with the button, or <kbd>⌘ Enter</kbd> / <kbd>Ctrl Enter</kbd> to add using the suggested role above (or noun if classification is not ready yet). Then build your library (at least one noun and one verb), generate an English prompt, type your Korean translation, and use Check for feedback.
         </p>
       </div>
 
       <div className="compact-toolbar compact-toolbar--library-only" role="toolbar" aria-label="Library">
-        <div className="compact-toolbar__cluster">
-          <label className="compact-toolbar__label" htmlFor="library-select">
+        <div
+          className={
+            newLibraryOpen || renameLibraryOpen
+              ? 'compact-toolbar__cluster compact-toolbar__cluster--stack'
+              : 'compact-toolbar__cluster'
+          }
+        >
+          <label
+            className="compact-toolbar__label"
+            htmlFor={
+              newLibraryOpen ? 'new-library-name' : renameLibraryOpen ? 'rename-library-name' : 'library-select'
+            }
+          >
             Library
           </label>
-          <select
-            id="library-select"
-            className="compact-select"
-            value={appState.activeLibraryId}
-            onChange={(e) => onSelectLibrary(e.target.value)}
-          >
-            {appState.libraries.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.name} ({l.words.length})
-              </option>
-            ))}
-          </select>
-          <button type="button" className="toolbar-icon-btn" onClick={onNewLibrary} title="New library" aria-label="New library">
-            +
-          </button>
-          <details className="toolbar-menu">
-            <summary className="toolbar-menu__trigger" aria-label="Library menu">
-              ···
-            </summary>
-            <div className="toolbar-menu__panel">
-              <button type="button" className="toolbar-menu__item" onClick={onRenameLibrary}>
-                Rename library…
+          {newLibraryOpen ? (
+            <>
+              <div className="compact-toolbar__new-lib-row">
+                <input
+                  ref={newLibraryInputRef}
+                  id="new-library-name"
+                  type="text"
+                  className="compact-toolbar__name-input"
+                  value={newLibraryName}
+                  onChange={(e) => {
+                    setNewLibraryName(e.target.value);
+                    setNewLibraryError(null);
+                  }}
+                  onKeyDown={onNewLibraryKeyDown}
+                  placeholder="Name this library…"
+                  maxLength={60}
+                  autoComplete="off"
+                  aria-invalid={!!newLibraryError}
+                  aria-describedby={newLibraryError ? 'new-library-error' : undefined}
+                />
+                <div className="compact-toolbar__new-lib-actions">
+                  <button type="button" className="compact-toolbar__commit-btn" onClick={commitNewLibrary}>
+                    Create
+                  </button>
+                  <button type="button" className="compact-toolbar__cancel-btn" onClick={cancelNewLibrary}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+              {newLibraryError ? (
+                <p id="new-library-error" className="compact-toolbar__field-error" role="alert">
+                  {newLibraryError}
+                </p>
+              ) : null}
+            </>
+          ) : renameLibraryOpen ? (
+            <>
+              <div className="compact-toolbar__new-lib-row">
+                <input
+                  ref={renameLibraryInputRef}
+                  id="rename-library-name"
+                  type="text"
+                  className="compact-toolbar__name-input"
+                  value={renameLibraryName}
+                  onChange={(e) => {
+                    setRenameLibraryName(e.target.value);
+                    setRenameLibraryError(null);
+                  }}
+                  onKeyDown={onRenameLibraryKeyDown}
+                  placeholder="Library name…"
+                  maxLength={60}
+                  autoComplete="off"
+                  aria-invalid={!!renameLibraryError}
+                  aria-describedby={renameLibraryError ? 'rename-library-error' : undefined}
+                />
+                <div className="compact-toolbar__new-lib-actions">
+                  <button type="button" className="compact-toolbar__commit-btn" onClick={commitRenameLibrary}>
+                    Save
+                  </button>
+                  <button type="button" className="compact-toolbar__cancel-btn" onClick={cancelRenameLibrary}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+              {renameLibraryError ? (
+                <p id="rename-library-error" className="compact-toolbar__field-error" role="alert">
+                  {renameLibraryError}
+                </p>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <select
+                id="library-select"
+                className="compact-select"
+                value={appState.activeLibraryId}
+                onChange={(e) => onSelectLibrary(e.target.value)}
+              >
+                {appState.libraries.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="toolbar-icon-btn"
+                onClick={openNewLibraryForm}
+                title="Create library"
+                aria-label="Create new library"
+              >
+                <ToolbarPlusIcon />
               </button>
-              <button type="button" className="toolbar-menu__item" onClick={onDeleteLibrary}>
-                Delete library…
-              </button>
-            </div>
-          </details>
+              <details ref={libraryMenuRef} className="toolbar-menu">
+                <summary className="toolbar-menu__trigger" aria-label="Library menu">
+                  <ToolbarMoreIcon />
+                </summary>
+                <div className="toolbar-menu__panel">
+                  <button type="button" className="toolbar-menu__item" onClick={onRenameLibrary}>
+                    Rename library…
+                  </button>
+                  <button type="button" className="toolbar-menu__item" onClick={onDeleteLibrary}>
+                    Delete library…
+                  </button>
+                </div>
+              </details>
+            </>
+          )}
         </div>
       </div>
 
@@ -548,7 +785,6 @@ export default function App() {
           maxLength={80}
           value={wordInput}
           onChange={(e) => {
-            userOverrodePosRef.current = false;
             setWordInput(e.target.value);
             setAddHint(null);
           }}
@@ -571,15 +807,62 @@ export default function App() {
         ) : classifyError ? (
           <span className="classify-status__error">{classifyError}</span>
         ) : classification ? (
-          <span className="classify-status__row">
-            <span className="classify-status__en" lang="en">
-              {classification.en}
-            </span>
-            {' · '}
-            Suggested role:{' '}
-            <PosTag pos={classification.pos} className="classify-status__pos-tag" /> · {confidenceLabel(classification.confidence)}
-            {classification.note ? ` — ${classification.note}` : ''}
-          </span>
+          <div className="classify-status__result">
+            <div className="classify-status__row">
+              <span className="classify-status__en" lang="en">
+                {capitalizeEnglishGloss(classification.en)}
+              </span>
+              <span className="classify-status__meta">
+                <PosTag pos={classification.pos} className="classify-status__pos-tag" />
+                {classification.note ? ` — ${classification.note}` : ''}
+              </span>
+            </div>
+            {classifyReportEligible ? (
+              <div className="classify-status__report">
+                {classifyReportThanks ? (
+                  <p className="classify-status__report-thanks" role="status">
+                    Thanks — we saved your note on this device for review.
+                  </p>
+                ) : classifyReportOpen ? (
+                  <div className="classify-status__report-panel">
+                    <p className="classify-status__report-hint">What looks wrong? (optional detail)</p>
+                    <textarea
+                      className="classify-status__report-textarea"
+                      value={classifyReportNote}
+                      onChange={(e) => setClassifyReportNote(e.target.value)}
+                      rows={3}
+                      maxLength={500}
+                      placeholder="e.g. Wrong English gloss, or part of speech should be different…"
+                      aria-label="Report details for this suggestion"
+                    />
+                    <div className="classify-status__report-actions">
+                      <button type="button" className="classify-status__report-submit" onClick={submitClassifyReport}>
+                        Save report
+                      </button>
+                      <button
+                        type="button"
+                        className="classify-status__report-cancel"
+                        onClick={() => {
+                          setClassifyReportOpen(false);
+                          setClassifyReportNote('');
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="classify-status__report-link"
+                    onClick={() => setClassifyReportOpen(true)}
+                  >
+                    Wrong translation? Report it
+                  </button>
+                )}
+              </div>
+            ) : null}
+          </div>
         ) : wordInput.trim() ? (
           <span className="classify-status__muted">Type or press Enter to classify.</span>
         ) : (
@@ -593,105 +876,54 @@ export default function App() {
         </p>
       ) : null}
 
-      <div className="word-controls" role="group" aria-label="Filters and part of speech when adding">
-        <div className="word-controls__cluster">
-          <label className="word-controls__label" htmlFor="filter-pos">
-            Show
-          </label>
-          <select
-            id="filter-pos"
-            className="compact-select"
-            value={gridFilter}
-            onChange={(e) => setGridFilter(e.target.value as GridFilter)}
+      <div className="word-controls" role="group" aria-label="Word list filters">
+        <div className="word-controls__toolbar">
+          <div
+            className="filters word-controls__filter-pills"
+            role="radiogroup"
             aria-label="Filter by part of speech"
           >
-            <option value="all">All types</option>
-            <option value="noun">{posFilterLabel('noun')}</option>
-            <option value="verb">{posFilterLabel('verb')}</option>
-            <option value="adjective">{posFilterLabel('adjective')}</option>
-          </select>
-          <select
-            id="filter-theme"
-            className="compact-select"
-            value={themeGridFilter}
-            onChange={(e) => {
-              const v = e.target.value;
-              setThemeGridFilter(v);
-              if (v !== 'all') {
-                setAppState((s) => ({ ...s, activeThemeId: v }));
-              }
-            }}
-            aria-label="Filter by theme; choosing a theme also selects it for new words and sentence generation"
-          >
-            <option value="all">All themes</option>
-            {appState.themePresets.map((th) => (
-              <option key={th.id} value={th.id}>
-                {th.label}
-              </option>
+            {(
+              [
+                ['all', 'All'],
+                ['noun', posFilterLabel('noun')],
+                ['verb', posFilterLabel('verb')],
+                ['adjective', posFilterLabel('adjective')],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={gridFilter === value}
+                className={gridFilter === value ? 'is-active' : ''}
+                onClick={() => setGridFilter(value)}
+              >
+                {label}
+              </button>
             ))}
-          </select>
-        </div>
-        <div className="word-controls__cluster">
-          <label className="word-controls__label" htmlFor="add-role">
-            Add as
-          </label>
-          <select
-            id="add-role"
-            className="compact-select"
-            value={selectedPos}
-            onChange={(e) => {
-              userOverrodePosRef.current = true;
-              setSelectedPos(e.target.value as WordPos);
-            }}
-            aria-label="Part of speech when adding"
-          >
-            <option value="noun">{posRoleButtonLabel('noun')}</option>
-            <option value="adjective">{posRoleButtonLabel('adjective')}</option>
-            <option value="verb">{posRoleButtonLabel('verb')}</option>
-          </select>
+          </div>
         </div>
       </div>
 
       <div className="grid">
         {filteredBank.length === 0 ? (
-          <p className="grid-empty">No words in this view. Add a word above or widen filters.</p>
+          <p className="grid-empty">No words in this view. Add a word above.</p>
         ) : (
-          filteredBank.map((w) => {
-            const themeLine = themeLabelsForWord(w, appState.themePresets);
-            return (
-              <article key={w.id} className="card card--streamlined" data-pos={w.pos}>
-                <div className="card-top">
-                  <PosTag pos={w.pos} />
-                  <button type="button" className="icon-btn" onClick={() => removeWord(w.id)} aria-label={`Remove ${w.text}`}>
-                    <RemoveIcon />
-                  </button>
-                </div>
-                <p className="word-ko">{w.text}</p>
-                <p className="word-en" lang="en">
-                  {w.en ?? '—'}
-                </p>
-                <p className="card-tags-preview">
-                  {themeLine ? themeLine : <span className="card-tags-preview--empty">Untagged</span>}
-                </p>
-                <details className="card-tags">
-                  <summary className="card-tags__summary">Tags</summary>
-                  <div className="card-tags__chips" role="group" aria-label={`Edit themes for ${w.text}`}>
-                    {appState.themePresets.map((th) => (
-                      <button
-                        key={th.id}
-                        type="button"
-                        className={`theme-chip${w.themeIds.includes(th.id) ? ' theme-chip--on' : ''}`}
-                        aria-pressed={w.themeIds.includes(th.id)}
-                        onClick={() => toggleWordTheme(w.id, th.id)}
-                      >
-                        {th.label}
-                      </button>
-                    ))}
-                  </div>
-                </details>
-              </article>
-            );
-          })
+          filteredBank.map((w) => (
+            <article key={w.id} className="card card--streamlined" data-pos={w.pos}>
+              <div className="card-top">
+                <PosTag pos={w.pos} />
+                <button type="button" className="icon-btn" onClick={() => removeWord(w.id)} aria-label={`Remove ${w.text}`}>
+                  <RemoveIcon />
+                </button>
+              </div>
+              <p className="word-ko">{w.text}</p>
+              <p className="word-en" lang="en">
+                {w.en ? formatWordEnGloss(w.en) : '—'}
+              </p>
+            </article>
+          ))
         )}
       </div>
 
@@ -785,6 +1017,9 @@ export default function App() {
           onClick={() => {
             clearHistory();
             setHistory([]);
+            setHistoryGlossVisible({});
+            setPracticeById({});
+            setCheckById({});
           }}
           disabled={history.length === 0}
         >
@@ -793,34 +1028,110 @@ export default function App() {
       </div>
 
       {history.length === 0 ? (
-        <p className="history-empty">No sentences yet. Tag words, pick a theme, and generate.</p>
+        <p className="history-empty">No sentences yet. Add words and generate a sentence.</p>
       ) : (
-        <div className="grid">
+        <div className="grid history-grid">
           {history.map((h, index) => (
-            <article key={h.id} className="card">
+            <article
+              key={h.id}
+              className={index === 0 ? 'card card--sentence-focus' : 'card'}
+            >
               <div className="card-top">
                 <span className="tag tag--sentence">Sentence</span>
               </div>
-              <p className="history-meta">
-                {formatHistoryTime(h.ts)}
-                {h.libraryName || h.themeLabel ? (
-                  <>
-                    {' · '}
-                    {h.libraryName ? <span className="history-lib">{h.libraryName}</span> : null}
-                    {h.themeLabel ? (
-                      <span className="history-theme">
-                        {h.libraryName ? ' · ' : ''}
-                        {h.themeLabel}
-                      </span>
+              {h.libraryName || h.themeLabel || index === 0 ? (
+                <p className="history-meta">
+                  {h.libraryName ? <span className="history-lib">{h.libraryName}</span> : null}
+                  {h.themeLabel ? (
+                    <span className="history-theme">
+                      {h.libraryName ? ' · ' : null}
+                      {h.themeLabel}
+                    </span>
+                  ) : null}
+                  {index === 0 ? <span className="history-latest">Latest</span> : null}
+                </p>
+              ) : null}
+              {isLegacySentenceResult(h.result) ? (
+                <>
+                  <p className="history-sentence" lang="ko">
+                    {h.result.sentence}
+                  </p>
+                  {h.result.english_gloss ? (
+                    <div className="history-gloss-row">
+                      <button
+                        type="button"
+                        className="icon-btn history-gloss-toggle"
+                        onClick={() => toggleHistoryGloss(h.id)}
+                        aria-expanded={!!historyGlossVisible[h.id]}
+                        aria-label={
+                          historyGlossVisible[h.id] ? 'Hide English translation' : 'Show English translation'
+                        }
+                      >
+                        {historyGlossVisible[h.id] ? <EyeOffIcon /> : <EyeIcon />}
+                      </button>
+                      {historyGlossVisible[h.id] ? (
+                        <p className="history-gloss" lang="en">
+                          {capitalizeEnglishGloss(h.result.english_gloss)}
+                        </p>
+                      ) : (
+                        <p className="history-gloss-placeholder">English translation hidden.</p>
+                      )}
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <p className="history-prompt-label">Translate into Korean</p>
+                  <p className="history-sentence history-sentence--en" lang="en">
+                    {capitalizeEnglishGloss(h.result.sentence)}
+                  </p>
+                  <div className="history-practice">
+                    <label className="field-label" htmlFor={`practice-${h.id}`}>
+                      Your Korean
+                    </label>
+                    <textarea
+                      id={`practice-${h.id}`}
+                      className="field-input history-practice-input"
+                      lang="ko"
+                      rows={index === 0 ? 5 : 3}
+                      placeholder="Type the Korean translation…"
+                      value={practiceById[h.id] ?? ''}
+                      onChange={(e) =>
+                        setPracticeById((prev) => ({
+                          ...prev,
+                          [h.id]: e.target.value,
+                        }))
+                      }
+                    />
+                    <div className="history-practice-actions">
+                      <button
+                        type="button"
+                        className="btn-ghost btn-compact"
+                        disabled={
+                          !practiceById[h.id]?.trim() || checkingId === h.id || !h.result.korean_reference
+                        }
+                        onClick={() => void onCheckTranslation(h.id)}
+                      >
+                        {checkingId === h.id ? 'Checking…' : 'Check translation'}
+                      </button>
+                    </div>
+                    {checkById[h.id] ? (
+                      <div className={`history-check history-check--${checkById[h.id]!.verdict}`}>
+                        <p className="history-check-verdict">{verdictLabel(checkById[h.id]!.verdict)}</p>
+                        <p className="history-check-feedback" lang="en">
+                          {checkById[h.id]!.feedback}
+                        </p>
+                        {h.result.korean_reference ? (
+                          <p className="history-reference" lang="ko">
+                            <span className="history-reference-label">Reference: </span>
+                            {h.result.korean_reference}
+                          </p>
+                        ) : null}
+                      </div>
                     ) : null}
-                  </>
-                ) : null}
-                {index === 0 ? <span className="history-latest">Latest</span> : null}
-              </p>
-              <p className="history-sentence" lang="ko">
-                {h.result.sentence}
-              </p>
-              {h.result.english_gloss ? <p className="history-gloss">{h.result.english_gloss}</p> : null}
+                  </div>
+                </>
+              )}
               {h.result.caveats?.length ? <p className="history-caveats">Notes: {h.result.caveats.join(' · ')}</p> : null}
             </article>
           ))}
@@ -859,7 +1170,7 @@ export default function App() {
       </details>
 
       <p className="note">
-        {wordBank.length} / {MAX_WORDS} words in “{activeLibrary?.name}” · generation uses words tagged “{activeThemeLabel ?? '—'}”
+        {wordBank.length} / {MAX_WORDS} words in “{activeLibrary?.name}” · generation uses all words in this library
       </p>
     </div>
   );

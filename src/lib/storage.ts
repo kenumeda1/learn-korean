@@ -14,7 +14,9 @@ import {
 const K_APP = 'language-helper:app';
 const K_VOCAB_LEGACY = 'language-helper:vocab';
 const K_HISTORY = 'language-helper:history';
+const K_CLASSIFY_REPORTS = 'language-helper:classify-reports';
 const HISTORY_MAX = 20;
+const CLASSIFY_REPORTS_MAX = 40;
 
 /** Legacy shape before word-bank v2. */
 export type PersistedVocabLegacy = {
@@ -51,10 +53,10 @@ function migrateLegacy(legacy: PersistedVocabLegacy): StoredWord[] {
   const nouns = parseWordList(legacy.nounsText ?? '');
   const adjectives = parseWordList(legacy.adjectivesText ?? '');
   const verbs = parseWordList(legacy.verbsText ?? '');
-  const words: StoredWord[] = [
-    ...nouns.map((text) => ({ id: newId(), text, pos: 'noun' as WordPos, themeIds: [] as string[] })),
-    ...adjectives.map((text) => ({ id: newId(), text, pos: 'adjective' as WordPos, themeIds: [] as string[] })),
-    ...verbs.map((text) => ({ id: newId(), text, pos: 'verb' as WordPos, themeIds: [] as string[] })),
+    const words: StoredWord[] = [
+    ...nouns.map((text) => ({ id: newId(), text, pos: 'noun' as WordPos })),
+    ...adjectives.map((text) => ({ id: newId(), text, pos: 'adjective' as WordPos })),
+    ...verbs.map((text) => ({ id: newId(), text, pos: 'verb' as WordPos })),
   ];
   return dedupeWords(words);
 }
@@ -161,23 +163,10 @@ export function loadAppState(): AppStateV3 {
     const activeLibraryId = libraries.some((l) => l.id === parsedApp.activeLibraryId)
       ? parsedApp.activeLibraryId
       : libraries[0].id;
-    const themePresets =
-      Array.isArray(parsedApp.themePresets) && parsedApp.themePresets.length > 0
-        ? (parsedApp.themePresets as { id: string; label: string }[])
-            .filter((t) => t && typeof t.id === 'string' && typeof t.label === 'string')
-            .map((t) => ({ id: t.id, label: t.label.slice(0, 40) }))
-        : createInitialAppState().themePresets;
-    let activeThemeId =
-      typeof parsedApp.activeThemeId === 'string' ? parsedApp.activeThemeId : null;
-    if (activeThemeId && !themePresets.some((t) => t.id === activeThemeId)) {
-      activeThemeId = themePresets[0]?.id ?? null;
-    }
     return {
       version: 3,
       libraries,
       activeLibraryId,
-      themePresets,
-      activeThemeId,
     };
   }
 
@@ -232,6 +221,31 @@ export function clearHistory(): void {
   localStorage.removeItem(K_HISTORY);
 }
 
+export type ClassifyReportEntry = {
+  id: string;
+  ts: number;
+  word: string;
+  en: string;
+  pos: WordPos;
+  note: string;
+};
+
+/** Append a learner flag about an incorrect gloss or POS; stored locally only. */
+export function appendClassifyReport(entry: { word: string; en: string; pos: WordPos; note: string }): void {
+  const prev = safeParse<ClassifyReportEntry[]>(localStorage.getItem(K_CLASSIFY_REPORTS), []);
+  const list = Array.isArray(prev) ? prev : [];
+  const row: ClassifyReportEntry = {
+    id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : String(Date.now()),
+    ts: Date.now(),
+    word: entry.word.trim().slice(0, 80),
+    en: entry.en.trim().slice(0, 200),
+    pos: entry.pos,
+    note: entry.note.trim().slice(0, 500),
+  };
+  const next = [row, ...list.filter((r) => r && typeof r.id === 'string')].slice(0, CLASSIFY_REPORTS_MAX);
+  localStorage.setItem(K_CLASSIFY_REPORTS, JSON.stringify(next));
+}
+
 /** @deprecated use loadAppState */
 export function loadWordBank(): StoredWord[] {
   const s = loadAppState();
@@ -249,7 +263,6 @@ export function addWordToBank(words: StoredWord[], text: string, pos: WordPos, e
     id: newId(),
     text: text.trim().slice(0, 80),
     pos,
-    themeIds: [],
   };
   if (en?.trim()) row.en = en.trim().slice(0, 120);
   return dedupeWords([...words, row]);

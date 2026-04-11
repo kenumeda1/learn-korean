@@ -1,7 +1,5 @@
 import type { WordPos } from '../schema/wordClassification';
 import { dedupeWords, type StoredWord } from './wordBank';
-import type { ThemePreset } from './themePresets';
-import { DEFAULT_THEME_PRESETS } from './themePresets';
 
 export const SNAPSHOT_CAP = 25;
 
@@ -24,9 +22,6 @@ export type AppStateV3 = {
   version: 3;
   libraries: Library[];
   activeLibraryId: string;
-  themePresets: ThemePreset[];
-  /** Theme used for sentence generation (subset of words). */
-  activeThemeId: string | null;
 };
 
 export function newId(): string {
@@ -34,7 +29,7 @@ export function newId(): string {
 }
 
 export function cloneWord(w: StoredWord): StoredWord {
-  return { ...w, themeIds: [...(w.themeIds ?? [])] };
+  return { ...w };
 }
 
 function snapshotsEqual(a: StoredWord[], b: StoredWord[]): boolean {
@@ -65,8 +60,6 @@ export function createInitialAppState(): AppStateV3 {
     version: 3,
     libraries: [lib],
     activeLibraryId: lib.id,
-    themePresets: [...DEFAULT_THEME_PRESETS],
-    activeThemeId: DEFAULT_THEME_PRESETS[0]?.id ?? null,
   };
 }
 
@@ -76,14 +69,10 @@ export function normalizeStoredWord(raw: unknown): StoredWord | null {
   const pos = w.pos;
   if (pos !== 'noun' && pos !== 'adjective' && pos !== 'verb') return null;
   if (typeof w.id !== 'string' || typeof w.text !== 'string') return null;
-  const themeIds = Array.isArray(w.themeIds)
-    ? (w.themeIds.filter((t) => typeof t === 'string') as string[])
-    : [];
   const row: StoredWord = {
     id: w.id,
     text: w.text.slice(0, 80),
     pos,
-    themeIds,
   };
   if (typeof w.en === 'string' && w.en.trim()) row.en = w.en.trim().slice(0, 120);
   return row;
@@ -115,13 +104,7 @@ export function restoreFromArchive(library: Library, archiveId: string): Library
   return applyWordsWithSnapshots(lib, [...lib.words, word]);
 }
 
-export function addWord(
-  library: Library,
-  text: string,
-  pos: WordPos,
-  themeIds: string[],
-  en?: string,
-): Library {
+export function addWord(library: Library, text: string, pos: WordPos, en?: string): Library {
   const trimmed = text.trim();
   if (!trimmed) return library;
   const gloss = en?.trim();
@@ -129,20 +112,12 @@ export function addWord(
     id: newId(),
     text: trimmed.slice(0, 80),
     pos,
-    themeIds: [...new Set(themeIds)],
   };
   if (gloss) row.en = gloss.slice(0, 120);
   const next = [...library.words, row];
   const deduped = dedupeWords(next);
   if (deduped.length === library.words.length) return library;
   return applyWordsWithSnapshots(library, deduped);
-}
-
-export function setWordThemes(library: Library, wordId: string, themeIds: string[]): Library {
-  const nextWords = library.words.map((w) =>
-    w.id === wordId ? { ...w, themeIds: [...new Set(themeIds)] } : w,
-  );
-  return applyWordsWithSnapshots(library, nextWords);
 }
 
 export function purgeArchiveEntry(library: Library, archiveId: string): Library {
