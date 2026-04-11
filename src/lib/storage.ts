@@ -221,6 +221,12 @@ export function clearHistory(): void {
   localStorage.removeItem(K_HISTORY);
 }
 
+export function removeHistoryEntry(id: string): void {
+  const prev = loadHistory();
+  const next = prev.filter((e) => e.id !== id);
+  localStorage.setItem(K_HISTORY, JSON.stringify(next));
+}
+
 export type ClassifyReportEntry = {
   id: string;
   ts: number;

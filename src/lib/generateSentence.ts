@@ -22,12 +22,33 @@ Rules:
 - Do not put Korean in "sentence"—English only there. Do not put English in "korean_reference"—Korean only there.
 - Be honest: set confidence low if unsure.
 - For taste/texture reactions in English, use lines like "It's spicy." / "It's really sweet." etc.
-- Dish names in English: loanword or brief gloss (gamjatang, budae jjigae); stay consistent.`;
+- Dish names in English: loanword or brief gloss (gamjatang, budae jjigae); stay consistent.
 
-function userPayload(lists: WordLists): string {
-  return `Nouns:\n${wordsToPromptLines(lists.nouns)}\n\nAdjectives:\n${wordsToPromptLines(
+DIVERSITY (critical): Each generation must feel like a new drill, not a small tweak of the last one.
+- Vary situation, speaker, and intent: observation vs question vs complaint vs plan vs story beat—not the same template every time (avoid repeating patterns like "The X has a strange Y" or "I think the X is Y" if you used that recently).
+- Change register and rhythm: statements, exclamations, questions, or two short beats—mix it up.
+- If the user message lists recent English prompts you already wrote, treat them as off-limits for reuse: new scenario, new predicate, new angle—same vocab allowed, different sentence DNA.`;
+
+export type GenerateSentenceOptions = {
+  /** Recent English prompts from this session; model should avoid same framing. */
+  recentEnglishPrompts?: string[];
+};
+
+function userPayload(lists: WordLists, recentEnglishPrompts?: string[]): string {
+  const vocab = `Nouns:\n${wordsToPromptLines(lists.nouns)}\n\nAdjectives:\n${wordsToPromptLines(
     lists.adjectives,
-  )}\n\nVerbs:\n${wordsToPromptLines(lists.verbs)}\n\nWrite the JSON now.`;
+  )}\n\nVerbs:\n${wordsToPromptLines(lists.verbs)}`;
+
+  if (!recentEnglishPrompts?.length) {
+    return `${vocab}\n\nWrite the JSON now.`;
+  }
+
+  const recent = recentEnglishPrompts
+    .slice(0, 10)
+    .map((line, i) => `${i + 1}. ${line}`)
+    .join('\n');
+
+  return `${vocab}\n\nRecent English prompts you already generated in this session (do NOT repeat the same idea, structure, or scenario—write something clearly different):\n${recent}\n\nWrite a NEW JSON object now.`;
 }
 
 function repairMessage(badSnippet: string): string {
@@ -51,12 +72,15 @@ function validateRawModelOutput(raw: string):
   }
 }
 
-export async function generateSentenceFromVocab(lists: WordLists): Promise<SentenceGeneration> {
+export async function generateSentenceFromVocab(
+  lists: WordLists,
+  options?: GenerateSentenceOptions,
+): Promise<SentenceGeneration> {
   if (lists.nouns.length === 0 || lists.verbs.length === 0) {
     throw new Error('Add at least one noun and one verb before generating.');
   }
 
-  const user = userPayload(lists);
+  const user = userPayload(lists, options?.recentEnglishPrompts);
   const client = getLlmClient();
   let raw = await client.completeJson([
     { role: 'system', content: SYSTEM },

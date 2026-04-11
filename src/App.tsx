@@ -18,14 +18,31 @@ import {
   loadAppState,
   loadHistory,
   prependHistory,
+  removeHistoryEntry,
   saveAppState,
   type HistoryEntry,
 } from './lib/storage';
+
+/** English lines already shown this session—passed to the model to reduce repetitive prompts. */
+function recentEnglishPromptsFromHistory(history: HistoryEntry[]): string[] {
+  const out: string[] = [];
+  for (const h of history) {
+    if (out.length >= 10) break;
+    const r = h.result;
+    if (r.korean_reference?.trim()) {
+      out.push(r.sentence.trim());
+    } else if (r.english_gloss?.trim()) {
+      out.push(r.english_gloss.trim());
+    }
+  }
+  return out;
+}
 import { MAX_WORDS, wordListsFromBank, type StoredWord } from './lib/wordBank';
 import type { SentenceGeneration } from './schema/sentenceGeneration';
 import type { TranslationCheck } from './schema/translationCheck';
 import type { WordClassification, WordPos } from './schema/wordClassification';
 import { llmStorageKeys } from './llm/getLlmClient';
+import { AboutPage, ContactPage } from './StaticPages';
 
 const CLASSIFY_DEBOUNCE_MS = 420;
 
@@ -64,6 +81,8 @@ function listsBlockedHint(lists: ReturnType<typeof wordListsFromBank>): string |
 }
 
 type GridFilter = 'all' | WordPos;
+
+type SitePage = 'home' | 'about' | 'contact';
 
 function formatSnapshotTime(ts: number): string {
   try {
@@ -231,6 +250,7 @@ export default function App() {
   const [classifyReportOpen, setClassifyReportOpen] = useState(false);
   const [classifyReportNote, setClassifyReportNote] = useState('');
   const [classifyReportThanks, setClassifyReportThanks] = useState(false);
+  const [sitePage, setSitePage] = useState<SitePage>('home');
 
   const wordInputRef = useRef<HTMLInputElement>(null);
   const newLibraryInputRef = useRef<HTMLInputElement>(null);
@@ -435,7 +455,9 @@ export default function App() {
     const libName = lib?.name ?? 'Library';
     setGenerating(true);
     try {
-      const result = await generateSentenceFromVocab(lists);
+      const result = await generateSentenceFromVocab(lists, {
+        recentEnglishPrompts: recentEnglishPromptsFromHistory(history),
+      });
       const entry: HistoryEntry = {
         id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : String(Date.now()),
         ts: Date.now(),
@@ -450,7 +472,7 @@ export default function App() {
     } finally {
       setGenerating(false);
     }
-  }, [lists]);
+  }, [lists, history]);
 
   const onCheckTranslation = useCallback(
     async (entryId: string) => {
@@ -480,6 +502,26 @@ export default function App() {
     },
     [history, practiceById, lists],
   );
+
+  const removeHistoryItem = useCallback((id: string) => {
+    removeHistoryEntry(id);
+    setHistory(loadHistory());
+    setHistoryGlossVisible((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setPracticeById((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setCheckById((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }, []);
 
   const removeWord = useCallback((id: string) => {
     updateActiveLibrary((lib) => moveWordToArchive(lib, id));
@@ -630,8 +672,55 @@ export default function App() {
     setHistoryGlossVisible((prev) => ({ ...prev, [id]: !prev[id] }));
   }, []);
 
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [sitePage]);
+
   return (
     <div className="page">
+      <header className="site-header">
+        <nav className="site-nav" aria-label="Site sections">
+          <div className="filters site-nav__tabs" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={sitePage === 'home'}
+              id="tab-home"
+              className={sitePage === 'home' ? 'is-active' : ''}
+              onClick={() => setSitePage('home')}
+            >
+              Home
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={sitePage === 'about'}
+              id="tab-about"
+              className={sitePage === 'about' ? 'is-active' : ''}
+              onClick={() => setSitePage('about')}
+            >
+              About us
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={sitePage === 'contact'}
+              id="tab-contact"
+              className={sitePage === 'contact' ? 'is-active' : ''}
+              onClick={() => setSitePage('contact')}
+            >
+              Contact us
+            </button>
+          </div>
+        </nav>
+      </header>
+
+      {sitePage === 'about' ? (
+        <AboutPage />
+      ) : sitePage === 'contact' ? (
+        <ContactPage />
+      ) : (
+        <>
       <p className="eyebrow">Language helper</p>
       <h1>
         Expand your <span>vocabulary</span>
@@ -1036,8 +1125,15 @@ export default function App() {
               key={h.id}
               className={index === 0 ? 'card card--sentence-focus' : 'card'}
             >
-              <div className="card-top">
-                <span className="tag tag--sentence">Sentence</span>
+              <div className="card-top card-top--history">
+                <button
+                  type="button"
+                  className="icon-btn"
+                  onClick={() => removeHistoryItem(h.id)}
+                  aria-label="Remove this sentence from history"
+                >
+                  <RemoveIcon />
+                </button>
               </div>
               {h.libraryName || h.themeLabel || index === 0 ? (
                 <p className="history-meta">
@@ -1093,7 +1189,7 @@ export default function App() {
                       id={`practice-${h.id}`}
                       className="field-input history-practice-input"
                       lang="ko"
-                      rows={index === 0 ? 5 : 3}
+                      rows={3}
                       placeholder="Type the Korean translation…"
                       value={practiceById[h.id] ?? ''}
                       onChange={(e) =>
@@ -1172,6 +1268,8 @@ export default function App() {
       <p className="note">
         {wordBank.length} / {MAX_WORDS} words in “{activeLibrary?.name}” · generation uses all words in this library
       </p>
+        </>
+      )}
     </div>
   );
 }

@@ -59,6 +59,55 @@ body {
   padding: 32px 20px 80px;
 }
 
+.site-header {
+  margin-bottom: 8px;
+}
+
+.site-nav {
+  display: flex;
+  justify-content: center;
+}
+
+.site-nav__tabs {
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.static-page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 8px 0 48px;
+}
+
+.static-page__title {
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+.static-page__body {
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text);
+}
+
+.static-page__body p {
+  margin: 0 0 14px;
+}
+
+.static-page__body p:last-child {
+  margin-bottom: 0;
+}
+
+.static-page__hint {
+  font-size: 14px;
+  color: var(--muted);
+  margin-top: 8px !important;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #fafbfc;
+}
+
 .eyebrow {
   font-size: 12px;
   font-weight: 600;
@@ -1163,7 +1212,7 @@ h1 span {
 }
 
 .card--sentence-focus .history-practice-input {
-  min-height: 7.5rem;
+  min-height: 4.75rem;
   font-size: 17px;
   line-height: 1.55;
 }
@@ -1214,6 +1263,10 @@ h1 span {
   align-items: flex-start;
   justify-content: space-between;
   margin-bottom: 12px;
+}
+
+.card-top--history {
+  justify-content: flex-end;
 }
 
 .tag {
