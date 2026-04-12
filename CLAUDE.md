@@ -13,6 +13,14 @@
 - Deploy status: poll production URL
 - Health check: https://language-helper-tawny.vercel.app
 
+## Testing
+
+- Framework: Vitest + jsdom
+- Run: `npm test` (single pass) or `npm run test:watch` (watch mode)
+- Test files: `src/**/*.test.ts`
+- Coverage: see `docs/test-plan.md` for full coverage map
+- Run tests before every commit touching `src/lib/` or `src/llm/`
+
 ## Design System
 
 Always read `DESIGN.md` before making any visual or UI decisions.
