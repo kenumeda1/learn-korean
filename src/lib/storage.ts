@@ -1,4 +1,5 @@
 import type { SentenceGeneration } from '../schema/sentenceGeneration';
+import type { SentenceTone } from './sentenceTone';
 import { parseWordList } from './parseWordList';
 import { dedupeWords, type StoredWord } from './wordBank';
 import type { WordPos } from '../schema/wordClassification';
@@ -34,6 +35,8 @@ export type HistoryEntry = {
   id: string;
   ts: number;
   result: SentenceGeneration;
+  /** Tone used when this sentence was generated (for Check). Omitted on older entries → balanced. */
+  tone?: SentenceTone;
   libraryId?: string;
   libraryName?: string;
   themeId?: string;

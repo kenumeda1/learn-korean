@@ -23,6 +23,24 @@ import {
   type HistoryEntry,
 } from './lib/storage';
 
+const LS_HERO_RETURNING = 'lh_hero_returning';
+
+function readHeroReturning(): boolean {
+  try {
+    return typeof localStorage !== 'undefined' && localStorage.getItem(LS_HERO_RETURNING) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function markHeroReturning(): void {
+  try {
+    localStorage.setItem(LS_HERO_RETURNING, '1');
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
 /** English lines already shown this session—passed to the model to reduce repetitive prompts. */
 function recentEnglishPromptsFromHistory(history: HistoryEntry[]): string[] {
   const out: string[] = [];
@@ -37,12 +55,20 @@ function recentEnglishPromptsFromHistory(history: HistoryEntry[]): string[] {
   }
   return out;
 }
+import {
+  DEFAULT_SENTENCE_TONE,
+  LS_SENTENCE_TONE_KEY,
+  parseSentenceTone,
+  SENTENCE_TONE_LABELS,
+  SENTENCE_TONES,
+  type SentenceTone,
+} from './lib/sentenceTone';
 import { MAX_WORDS, wordListsFromBank, type StoredWord } from './lib/wordBank';
 import type { SentenceGeneration } from './schema/sentenceGeneration';
 import type { TranslationCheck } from './schema/translationCheck';
 import type { WordClassification, WordPos } from './schema/wordClassification';
 import { llmStorageKeys } from './llm/getLlmClient';
-import { AboutPage, ContactPage } from './StaticPages';
+import { AboutPage, ContactPage, PrivacyPage, TermsPage } from './StaticPages';
 
 const CLASSIFY_DEBOUNCE_MS = 420;
 
@@ -82,7 +108,7 @@ function listsBlockedHint(lists: ReturnType<typeof wordListsFromBank>): string |
 
 type GridFilter = 'all' | WordPos;
 
-type SitePage = 'home' | 'about' | 'contact';
+type SitePage = 'home' | 'about' | 'support' | 'terms' | 'privacy';
 
 function formatSnapshotTime(ts: number): string {
   try {
@@ -234,10 +260,19 @@ export default function App() {
 
   const [byokEnabled, setByokEnabled] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState('');
+  const [sentenceTone, setSentenceTone] = useState<SentenceTone>(() => {
+    try {
+      if (typeof localStorage === 'undefined') return DEFAULT_SENTENCE_TONE;
+      return parseSentenceTone(localStorage.getItem(LS_SENTENCE_TONE_KEY));
+    } catch {
+      return DEFAULT_SENTENCE_TONE;
+    }
+  });
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [historyGlossVisible, setHistoryGlossVisible] = useState<Record<string, boolean>>({});
+  const [historyCaveatsVisible, setHistoryCaveatsVisible] = useState<Record<string, boolean>>({});
   const [practiceById, setPracticeById] = useState<Record<string, string>>({});
   const [checkById, setCheckById] = useState<Record<string, TranslationCheck | null>>({});
   const [checkingId, setCheckingId] = useState<string | null>(null);
@@ -251,6 +286,7 @@ export default function App() {
   const [classifyReportNote, setClassifyReportNote] = useState('');
   const [classifyReportThanks, setClassifyReportThanks] = useState(false);
   const [sitePage, setSitePage] = useState<SitePage>('home');
+  const [howItWorksOpen, setHowItWorksOpen] = useState(() => !readHeroReturning());
 
   const wordInputRef = useRef<HTMLInputElement>(null);
   const newLibraryInputRef = useRef<HTMLInputElement>(null);
@@ -284,6 +320,14 @@ export default function App() {
     const k = localStorage.getItem(llmStorageKeys.apiKey);
     if (k) setApiKeyInput(k);
   }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS_SENTENCE_TONE_KEY, sentenceTone);
+    } catch {
+      /* ignore quota / private mode */
+    }
+  }, [sentenceTone]);
 
   useEffect(() => {
     saveAppState(appState);
@@ -457,22 +501,26 @@ export default function App() {
     try {
       const result = await generateSentenceFromVocab(lists, {
         recentEnglishPrompts: recentEnglishPromptsFromHistory(history),
+        tone: sentenceTone,
       });
       const entry: HistoryEntry = {
         id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : String(Date.now()),
         ts: Date.now(),
         result,
+        tone: sentenceTone,
         libraryId: sid,
         libraryName: libName,
       };
       prependHistory(entry);
       setHistory(loadHistory());
+      markHeroReturning();
+      setHowItWorksOpen(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong');
     } finally {
       setGenerating(false);
     }
-  }, [lists, history]);
+  }, [lists, history, sentenceTone]);
 
   const onCheckTranslation = useCallback(
     async (entryId: string) => {
@@ -492,6 +540,7 @@ export default function App() {
           referenceKorean: ref,
           userKorean: text,
           lists,
+          tone: parseSentenceTone(h.tone),
         });
         setCheckById((prev) => ({ ...prev, [entryId]: out }));
       } catch (e) {
@@ -507,6 +556,11 @@ export default function App() {
     removeHistoryEntry(id);
     setHistory(loadHistory());
     setHistoryGlossVisible((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setHistoryCaveatsVisible((prev) => {
       const next = { ...prev };
       delete next[id];
       return next;
@@ -627,10 +681,7 @@ export default function App() {
 
   const onDeleteLibrary = useCallback(() => {
     const prev = appStateRef.current;
-    if (prev.libraries.length < 2) {
-      window.alert('Keep at least one library.');
-      return;
-    }
+    if (prev.libraries.length < 2) return;
     if (!window.confirm('Delete this library and its archive? This cannot be undone.')) return;
     const removing = prev.activeLibraryId;
     const remaining = prev.libraries.filter((l) => l.id !== removing);
@@ -672,67 +723,55 @@ export default function App() {
     setHistoryGlossVisible((prev) => ({ ...prev, [id]: !prev[id] }));
   }, []);
 
+  const toggleHistoryCaveats = useCallback((id: string) => {
+    setHistoryCaveatsVisible((prev) => ({ ...prev, [id]: !prev[id] }));
+  }, []);
+
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [sitePage]);
 
   return (
     <div className="page">
-      <header className="site-header">
-        <nav className="site-nav" aria-label="Site sections">
-          <div className="filters site-nav__tabs" role="tablist">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={sitePage === 'home'}
-              id="tab-home"
-              className={sitePage === 'home' ? 'is-active' : ''}
-              onClick={() => setSitePage('home')}
-            >
-              Home
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={sitePage === 'about'}
-              id="tab-about"
-              className={sitePage === 'about' ? 'is-active' : ''}
-              onClick={() => setSitePage('about')}
-            >
-              About us
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={sitePage === 'contact'}
-              id="tab-contact"
-              className={sitePage === 'contact' ? 'is-active' : ''}
-              onClick={() => setSitePage('contact')}
-            >
-              Contact us
-            </button>
-          </div>
-        </nav>
-      </header>
+      <p className="eyebrow">Language helper</p>
 
       {sitePage === 'about' ? (
         <AboutPage />
-      ) : sitePage === 'contact' ? (
+      ) : sitePage === 'support' ? (
         <ContactPage />
+      ) : sitePage === 'terms' ? (
+        <TermsPage />
+      ) : sitePage === 'privacy' ? (
+        <PrivacyPage />
       ) : (
         <>
-      <p className="eyebrow">Language helper</p>
       <h1>
-        Expand your <span>vocabulary</span>
+        Actively write <span>Korean</span>
       </h1>
-      <div className="hero-sub">
-        <p>
-          Type a Korean word. We suggest noun <span lang="ko">(명사)</span>, adjective <span lang="ko">(형용사)</span>, or verb{' '}
-          <span lang="ko">(동사)</span> as you type. Press <kbd>Enter</kbd> to classify.
-        </p>
-        <p>
-          Add with the button, or <kbd>⌘ Enter</kbd> / <kbd>Ctrl Enter</kbd> to add using the suggested role above (or noun if classification is not ready yet). Then build your library (at least one noun and one verb), generate an English prompt, type your Korean translation, and use Check for feedback.
-        </p>
+      <p className="hero-one-liner">
+        For English speakers learning Korean: build a word bank, get an English prompt, type Korean, and check your translation.
+      </p>
+      <div className="hero-how">
+        <details
+          className="how-it-works"
+          open={howItWorksOpen}
+          onToggle={(e) => {
+            const open = e.currentTarget.open;
+            setHowItWorksOpen(open);
+            if (!open) markHeroReturning();
+          }}
+        >
+          <summary>How this works</summary>
+          <div className="how-it-works-body">
+            <p>
+              Type a Korean word. We suggest noun <span lang="ko">(명사)</span>, adjective <span lang="ko">(형용사)</span>, or verb{' '}
+              <span lang="ko">(동사)</span> as you type. Press <kbd>Enter</kbd> to classify.
+            </p>
+            <p>
+              Add with the button, or <kbd>⌘ Enter</kbd> / <kbd>Ctrl Enter</kbd> to add using the suggested role above (or noun if classification is not ready yet). Then build your library (at least one noun and one verb), generate an English prompt, type your Korean translation, and use Check for feedback.
+            </p>
+          </div>
+        </details>
       </div>
 
       <div className="compact-toolbar compact-toolbar--library-only" role="toolbar" aria-label="Library">
@@ -852,7 +891,14 @@ export default function App() {
                   <button type="button" className="toolbar-menu__item" onClick={onRenameLibrary}>
                     Rename library…
                   </button>
-                  <button type="button" className="toolbar-menu__item" onClick={onDeleteLibrary}>
+                  <button
+                    type="button"
+                    className="toolbar-menu__item"
+                    disabled={appState.libraries.length < 2}
+                    aria-describedby={appState.libraries.length < 2 ? 'library-delete-hint' : undefined}
+                    title={appState.libraries.length < 2 ? 'Create another library first' : undefined}
+                    onClick={onDeleteLibrary}
+                  >
                     Delete library…
                   </button>
                 </div>
@@ -861,6 +907,11 @@ export default function App() {
           )}
         </div>
       </div>
+      {appState.libraries.length < 2 ? (
+        <p id="library-delete-hint" className="compact-toolbar__feedback" role="note">
+          Create a second library before you can delete one.
+        </p>
+      ) : null}
 
       <div className="input-shell">
         <span className="input-icon" aria-hidden title="Korean input">
@@ -1016,6 +1067,24 @@ export default function App() {
         )}
       </div>
 
+      <div className="tone-field" role="group" aria-label="Sentence tone">
+        <label htmlFor="sentence-tone" className="tone-field__label">
+          Tone
+        </label>
+        <select
+          id="sentence-tone"
+          className="tone-field__select compact-select"
+          value={sentenceTone}
+          onChange={(e) => setSentenceTone(parseSentenceTone(e.target.value))}
+        >
+          {SENTENCE_TONES.map((t) => (
+            <option key={t} value={t}>
+              {SENTENCE_TONE_LABELS[t]}
+            </option>
+          ))}
+        </select>
+      </div>
+
       <button
         type="button"
         className={`generate-btn${generating ? ' generate-btn--loading' : ''}`}
@@ -1038,66 +1107,6 @@ export default function App() {
         </p>
       ) : null}
 
-      <details className="library-tools">
-        <summary>
-          Library backup · {activeLibrary?.snapshots.length ?? 0} snapshots · {activeLibrary?.archive.length ?? 0} archived
-        </summary>
-        <div className="library-tools__body">
-          <section className="library-tools__section">
-            <h3 className="library-tools__h">Snapshots</h3>
-            <p className="library-tools__hint">Auto-saved when your word list changes (last 25).</p>
-            <ul className="snapshots-list">
-              {snapshotsNewestFirst.length === 0 ? (
-                <li className="snapshots-empty">None yet.</li>
-              ) : (
-                snapshotsNewestFirst.map((s) => (
-                  <li key={s.ts} className="snapshots-item">
-                    <span>
-                      {formatSnapshotTime(s.ts)} · {s.words.length} words
-                    </span>
-                    <button type="button" className="btn-ghost btn-compact" onClick={() => onRestoreSnapshot(s)}>
-                      Restore
-                    </button>
-                  </li>
-                ))
-              )}
-            </ul>
-          </section>
-          <section className="library-tools__section">
-            <h3 className="library-tools__h">Archive</h3>
-            <p className="library-tools__hint">Removed words stay here until you restore or delete.</p>
-            <ul className="archive-list archive-list--embedded">
-              {(activeLibrary?.archive ?? []).length === 0 ? (
-                <li className="archive-empty">Empty.</li>
-              ) : (
-                (activeLibrary?.archive ?? []).map((a) => (
-                  <li key={a.id} className="archive-item">
-                    <span className="archive-word" lang="ko">
-                      {a.text}
-                    </span>
-                    <PosTag pos={a.pos} />
-                    <button
-                      type="button"
-                      className="btn-ghost btn-compact"
-                      onClick={() => updateActiveLibrary((lib) => restoreFromArchive(lib, a.id))}
-                    >
-                      Restore
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-ghost btn-compact btn-danger"
-                      onClick={() => updateActiveLibrary((lib) => purgeArchiveEntry(lib, a.id))}
-                    >
-                      Delete
-                    </button>
-                  </li>
-                ))
-              )}
-            </ul>
-          </section>
-        </div>
-      </details>
-
       <h2 className="section-heading">Recent sentences</h2>
       <div className="section-actions">
         <button
@@ -1107,6 +1116,7 @@ export default function App() {
             clearHistory();
             setHistory([]);
             setHistoryGlossVisible({});
+            setHistoryCaveatsVisible({});
             setPracticeById({});
             setCheckById({});
           }}
@@ -1120,7 +1130,8 @@ export default function App() {
         <p className="history-empty">No sentences yet. Add words and generate a sentence.</p>
       ) : (
         <div className="grid history-grid">
-          {history.map((h, index) => (
+          {history.map((h, index) => {
+            return (
             <article
               key={h.id}
               className={index === 0 ? 'card card--sentence-focus' : 'card'}
@@ -1135,7 +1146,7 @@ export default function App() {
                   <RemoveIcon />
                 </button>
               </div>
-              {h.libraryName || h.themeLabel || index === 0 ? (
+              {h.libraryName || h.themeLabel || index === 0 || (h.tone && h.tone !== 'balanced') ? (
                 <p className="history-meta">
                   {h.libraryName ? <span className="history-lib">{h.libraryName}</span> : null}
                   {h.themeLabel ? (
@@ -1145,6 +1156,12 @@ export default function App() {
                     </span>
                   ) : null}
                   {index === 0 ? <span className="history-latest">Latest</span> : null}
+                  {h.tone && h.tone !== 'balanced' ? (
+                    <>
+                      {h.libraryName || h.themeLabel || index === 0 ? <span> · </span> : null}
+                      <span className="history-tone">{SENTENCE_TONE_LABELS[parseSentenceTone(h.tone)]}</span>
+                    </>
+                  ) : null}
                 </p>
               ) : null}
               {isLegacySentenceResult(h.result) ? (
@@ -1228,9 +1245,29 @@ export default function App() {
                   </div>
                 </>
               )}
-              {h.result.caveats?.length ? <p className="history-caveats">Notes: {h.result.caveats.join(' · ')}</p> : null}
+              {h.result.caveats?.length ? (
+                <div className="history-gloss-row history-caveats-row">
+                  <button
+                    type="button"
+                    className="icon-btn history-caveats-toggle"
+                    onClick={() => toggleHistoryCaveats(h.id)}
+                    aria-expanded={!!historyCaveatsVisible[h.id]}
+                    aria-label={
+                      historyCaveatsVisible[h.id] ? 'Hide notes' : 'Peek at notes'
+                    }
+                  >
+                    {historyCaveatsVisible[h.id] ? <EyeOffIcon /> : <EyeIcon />}
+                  </button>
+                  {historyCaveatsVisible[h.id] ? (
+                    <p className="history-caveats">Notes: {h.result.caveats!.join(' · ')}</p>
+                  ) : (
+                    <p className="history-caveats-placeholder">Click to see tips.</p>
+                  )}
+                </div>
+              ) : null}
             </article>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -1268,8 +1305,88 @@ export default function App() {
       <p className="note">
         {wordBank.length} / {MAX_WORDS} words in “{activeLibrary?.name}” · generation uses all words in this library
       </p>
+
+      <details className="library-tools">
+        <summary>
+          Library backup · {activeLibrary?.snapshots.length ?? 0} snapshots · {activeLibrary?.archive.length ?? 0} archived
+        </summary>
+        <div className="library-tools__body">
+          <section className="library-tools__section">
+            <h3 className="library-tools__h">Snapshots</h3>
+            <p className="library-tools__hint">Auto-saved when your word list changes (last 25).</p>
+            <ul className="snapshots-list">
+              {snapshotsNewestFirst.length === 0 ? (
+                <li className="snapshots-empty">None yet.</li>
+              ) : (
+                snapshotsNewestFirst.map((s) => (
+                  <li key={s.ts} className="snapshots-item">
+                    <span>
+                      {formatSnapshotTime(s.ts)} · {s.words.length} words
+                    </span>
+                    <button type="button" className="btn-ghost btn-compact" onClick={() => onRestoreSnapshot(s)}>
+                      Restore
+                    </button>
+                  </li>
+                ))
+              )}
+            </ul>
+          </section>
+          <section className="library-tools__section">
+            <h3 className="library-tools__h">Archive</h3>
+            <p className="library-tools__hint">Removed words stay here until you restore or delete.</p>
+            <ul className="archive-list archive-list--embedded">
+              {(activeLibrary?.archive ?? []).length === 0 ? (
+                <li className="archive-empty">Empty.</li>
+              ) : (
+                (activeLibrary?.archive ?? []).map((a) => (
+                  <li key={a.id} className="archive-item">
+                    <span className="archive-word" lang="ko">
+                      {a.text}
+                    </span>
+                    <PosTag pos={a.pos} />
+                    <button
+                      type="button"
+                      className="btn-ghost btn-compact"
+                      onClick={() => updateActiveLibrary((lib) => restoreFromArchive(lib, a.id))}
+                    >
+                      Restore
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-ghost btn-compact btn-danger"
+                      onClick={() => updateActiveLibrary((lib) => purgeArchiveEntry(lib, a.id))}
+                    >
+                      Delete
+                    </button>
+                  </li>
+                ))
+              )}
+            </ul>
+          </section>
+        </div>
+      </details>
         </>
       )}
+
+      <footer className="site-footer">
+        <nav className="site-footer__nav" aria-label="Footer">
+          <button type="button" className="site-footer__link" onClick={() => setSitePage('home')}>
+            Home
+          </button>
+          <button type="button" className="site-footer__link" onClick={() => setSitePage('about')}>
+            About us
+          </button>
+          <button type="button" className="site-footer__link" onClick={() => setSitePage('support')}>
+            Support
+          </button>
+          <button type="button" className="site-footer__link" onClick={() => setSitePage('terms')}>
+            Terms
+          </button>
+          <button type="button" className="site-footer__link" onClick={() => setSitePage('privacy')}>
+            Privacy
+          </button>
+        </nav>
+      </footer>
     </div>
   );
 }

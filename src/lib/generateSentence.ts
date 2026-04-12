@@ -2,6 +2,7 @@ import { extractJsonObjectText } from './extractJson';
 import { wordsToPromptLines } from './parseWordList';
 import { getLlmClient } from '../llm/getLlmClient';
 import { sentenceGenerationSchema, type SentenceGeneration } from '../schema/sentenceGeneration';
+import { DEFAULT_SENTENCE_TONE, toneBlockForGeneration, type SentenceTone } from './sentenceTone';
 
 export type WordLists = {
   nouns: string[];
@@ -32,15 +33,23 @@ DIVERSITY (critical): Each generation must feel like a new drill, not a small tw
 export type GenerateSentenceOptions = {
   /** Recent English prompts from this session; model should avoid same framing. */
   recentEnglishPrompts?: string[];
+  /** Style for English prompt + Korean reference. Defaults to balanced. */
+  tone?: SentenceTone;
 };
 
-function userPayload(lists: WordLists, recentEnglishPrompts?: string[]): string {
+function userPayload(
+  lists: WordLists,
+  recentEnglishPrompts: string[] | undefined,
+  tone: SentenceTone,
+): string {
   const vocab = `Nouns:\n${wordsToPromptLines(lists.nouns)}\n\nAdjectives:\n${wordsToPromptLines(
     lists.adjectives,
   )}\n\nVerbs:\n${wordsToPromptLines(lists.verbs)}`;
 
+  const toneSection = `\n\n${toneBlockForGeneration(tone)}`;
+
   if (!recentEnglishPrompts?.length) {
-    return `${vocab}\n\nWrite the JSON now.`;
+    return `${vocab}${toneSection}\n\nWrite the JSON now.`;
   }
 
   const recent = recentEnglishPrompts
@@ -48,7 +57,7 @@ function userPayload(lists: WordLists, recentEnglishPrompts?: string[]): string 
     .map((line, i) => `${i + 1}. ${line}`)
     .join('\n');
 
-  return `${vocab}\n\nRecent English prompts you already generated in this session (do NOT repeat the same idea, structure, or scenario—write something clearly different):\n${recent}\n\nWrite a NEW JSON object now.`;
+  return `${vocab}${toneSection}\n\nRecent English prompts you already generated in this session (do NOT repeat the same idea, structure, or scenario—write something clearly different):\n${recent}\n\nWrite a NEW JSON object now.`;
 }
 
 function repairMessage(badSnippet: string): string {
@@ -80,7 +89,8 @@ export async function generateSentenceFromVocab(
     throw new Error('Add at least one noun and one verb before generating.');
   }
 
-  const user = userPayload(lists, options?.recentEnglishPrompts);
+  const tone = options?.tone ?? DEFAULT_SENTENCE_TONE;
+  const user = userPayload(lists, options?.recentEnglishPrompts, tone);
   const client = getLlmClient();
   let raw = await client.completeJson([
     { role: 'system', content: SYSTEM },
