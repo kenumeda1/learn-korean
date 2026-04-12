@@ -78,3 +78,58 @@ Items explicitly **skipped for v0**; add when shipping beyond solo desktop or wh
 - **Effort:** S (human) / S (CC+gstack)
 - **Priority:** P3
 - **Depends on:** None.
+
+## Deferred — /autoplan (2026-04-12)
+
+### D4 — Vocabulary import path
+
+- **What:** Import from Anki/Quizlet CSV (or a plain word-list paste) instead of manual entry one by one.
+- **Why:** Manual word entry is the biggest onboarding friction. Users already have word lists elsewhere.
+- **Pros:** Removes the biggest blocker for new users with existing study materials.
+- **Cons:** CSV format variance; POS classification still needed on import.
+- **Context:** Autoplan CEO review flagged this as the top un-dismissed alternative.
+- **Effort:** M (human) / S (CC+gstack)
+- **Priority:** P3
+- **Depends on:** None.
+
+### D5 — 12-month success definition + differentiation narrative
+
+- **What:** Write a stated success metric (e.g., learner returns 3+ days/week, vocab grows 5+ words/week) and a clear answer to "why not just use ChatGPT." Moat: compounding personal vocabulary + session history over time.
+- **Why:** Without this, roadmap decisions cannot be evaluated for direction.
+- **Effort:** S (human) / S (CC+gstack)
+- **Priority:** P2
+- **Depends on:** None.
+
+### D6 — Session history persistence
+
+- **What:** Persist last ~20 history entries to localStorage so they survive page reload. Include sentence + feedback.
+- **Why:** History is in-memory only. Cleared on refresh. Learners lose yesterday's sentences.
+- **Pros:** Core to the "compounding personal data" moat; trivial to implement.
+- **Cons:** localStorage quota (manageable with 20-entry cap).
+- **Effort:** S (human) / S (CC+gstack)
+- **Priority:** P2
+- **Depends on:** None.
+
+### D7 — Observability
+
+- **What:** Vercel Web Analytics (zero config) + structured console error logging in dev mode with full API error detail.
+- **Why:** No visibility into errors or usage patterns. Needed before any public sharing.
+- **Effort:** S (human) / S (CC+gstack)
+- **Priority:** P2
+- **Depends on:** None.
+
+### D8 — App.tsx decomposition
+
+- **What:** Extract `HistoryCard` (local state: practice/check/gloss visibility), `LibraryToolbar`, `WordInputShell`, `WordBankGrid` as independent components.
+- **Why:** App.tsx is 1345 lines with all state co-located. Will become painful at ~2000 lines.
+- **Effort:** M (human) / S (CC+gstack)
+- **Priority:** P3
+- **Depends on:** None (purely internal refactor).
+
+### D9 — Test suite (vitest)
+
+- **What:** Set up Vitest + React Testing Library. Implement coverage from `docs/test-plan.md`.
+- **Why:** Zero test files. No regression protection. Highest-risk paths: storage migration, getLlmClient routing, word bank dedup.
+- **Effort:** M (human) / S (CC+gstack)
+- **Priority:** P2 (do before any major new feature)
+- **Depends on:** None.
