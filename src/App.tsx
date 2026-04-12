@@ -67,7 +67,6 @@ import { MAX_WORDS, wordListsFromBank, type StoredWord } from './lib/wordBank';
 import type { SentenceGeneration } from './schema/sentenceGeneration';
 import type { TranslationCheck } from './schema/translationCheck';
 import type { WordClassification, WordPos } from './schema/wordClassification';
-import { llmStorageKeys } from './llm/getLlmClient';
 import { AboutPage, ContactPage, PrivacyPage, TermsPage } from './StaticPages';
 
 const CLASSIFY_DEBOUNCE_MS = 420;
@@ -258,8 +257,6 @@ export default function App() {
   const [classifyError, setClassifyError] = useState<string | null>(null);
   const [addHint, setAddHint] = useState<string | null>(null);
 
-  const [byokEnabled, setByokEnabled] = useState(false);
-  const [apiKeyInput, setApiKeyInput] = useState('');
   const [sentenceTone, setSentenceTone] = useState<SentenceTone>(() => {
     try {
       if (typeof localStorage === 'undefined') return DEFAULT_SENTENCE_TONE;
@@ -316,9 +313,6 @@ export default function App() {
 
   useEffect(() => {
     setHistory(loadHistory());
-    setByokEnabled(localStorage.getItem(llmStorageKeys.byokEnabled) === 'true');
-    const k = localStorage.getItem(llmStorageKeys.apiKey);
-    if (k) setApiKeyInput(k);
   }, []);
 
   useEffect(() => {
@@ -338,16 +332,6 @@ export default function App() {
     setClassifyReportNote('');
     setClassifyReportThanks(false);
   }, [wordInput]);
-
-  useEffect(() => {
-    localStorage.setItem(llmStorageKeys.byokEnabled, byokEnabled ? 'true' : 'false');
-    if (byokEnabled && apiKeyInput) {
-      localStorage.setItem(llmStorageKeys.apiKey, apiKeyInput);
-    }
-    if (!byokEnabled) {
-      localStorage.removeItem(llmStorageKeys.apiKey);
-    }
-  }, [byokEnabled, apiKeyInput]);
 
   const updateActiveLibrary = useCallback((fn: (lib: Library) => Library) => {
     setAppState((prev) => ({
@@ -1270,37 +1254,6 @@ export default function App() {
           })}
         </div>
       )}
-
-      <details className="settings-details">
-        <summary>Model access (development)</summary>
-        <div className="settings-body">
-          <p className="settings-hint">
-            Same-origin proxy: <span className="mono">VITE_LLM_PROXY_PATH</span>. Or put{' '}
-            <span className="mono">VITE_OPENAI_API_KEY</span> or <span className="mono">VITE_ANTHROPIC_API_KEY</span> in{' '}
-            <span className="mono">.env</span>. Claude (Anthropic) keys start with <span className="mono">sk-ant</span>
-            {', '}the app uses Anthropic automatically when you paste one below. Local browser storage is dev only.
-          </p>
-          <label className="settings-check">
-            <input type="checkbox" checked={byokEnabled} onChange={(e) => setByokEnabled(e.target.checked)} />
-            <span>Store API key in this browser (dev only)</span>
-          </label>
-          {byokEnabled ? (
-            <>
-              <label className="field-label" htmlFor="api-key">
-                API key
-              </label>
-              <input
-                id="api-key"
-                className="field-input"
-                type="password"
-                autoComplete="off"
-                value={apiKeyInput}
-                onChange={(e) => setApiKeyInput(e.target.value)}
-              />
-            </>
-          ) : null}
-        </div>
-      </details>
 
       <p className="note">
         {wordBank.length} / {MAX_WORDS} words in “{activeLibrary?.name}” · generation uses all words in this library
