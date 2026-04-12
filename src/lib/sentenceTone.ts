@@ -12,7 +12,7 @@ export type SentenceTone = (typeof SENTENCE_TONES)[number];
 
 export const DEFAULT_SENTENCE_TONE: SentenceTone = 'balanced';
 
-export const LS_SENTENCE_TONE_KEY = 'language-helper:sentence-tone';
+export const LS_SENTENCE_TONE_KEY = 'munjang:sentence-tone';
 
 export const SENTENCE_TONE_LABELS: Record<SentenceTone, string> = {
   balanced: 'Balanced',

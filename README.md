@@ -1,4 +1,4 @@
-# Language Helper — Korean Vocabulary & Sentence Practice
+# Munjang — Korean Vocabulary & Sentence Practice
 
 A personal web app for English speakers learning Korean. Add words you're studying, let AI classify them, generate real Korean practice sentences from your own vocabulary bank, and check your translations with structured feedback.
 

@@ -11,7 +11,7 @@ import {
 } from './storage';
 import type { AppStateV3 } from './appState';
 
-const K_APP = 'language-helper:app';
+const K_APP = 'munjang:app';
 const K_VOCAB_LEGACY = 'language-helper:vocab';
 
 beforeEach(() => {

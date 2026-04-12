@@ -23,7 +23,7 @@ import {
   type HistoryEntry,
 } from './lib/storage';
 
-const LS_HERO_RETURNING = 'lh_hero_returning';
+const LS_HERO_RETURNING = 'mj_hero_returning';
 
 function readHeroReturning(): boolean {
   try {

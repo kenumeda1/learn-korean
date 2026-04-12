@@ -2,8 +2,8 @@ import { createAnthropicClient } from './anthropic';
 import { createOpenAiCompatibleClient, createProxyLlmClient } from './openaiCompatible';
 import type { LlmClient } from './types';
 
-const STORAGE_BYOK = 'language-helper:byok-enabled';
-const STORAGE_API_KEY = 'language-helper:api-key';
+const STORAGE_BYOK = 'munjang:byok-enabled';
+const STORAGE_API_KEY = 'munjang:api-key';
 
 function readLocalStorage(key: string): string | null {
   try {

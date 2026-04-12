@@ -12,10 +12,11 @@ import {
   normalizeStoredWord,
 } from './appState';
 
-const K_APP = 'language-helper:app';
+const K_APP = 'munjang:app';
+const K_APP_LEGACY = 'language-helper:app';
 const K_VOCAB_LEGACY = 'language-helper:vocab';
-const K_HISTORY = 'language-helper:history';
-const K_CLASSIFY_REPORTS = 'language-helper:classify-reports';
+const K_HISTORY = 'munjang:history';
+const K_CLASSIFY_REPORTS = 'munjang:classify-reports';
 const HISTORY_MAX = 20;
 const CLASSIFY_REPORTS_MAX = 40;
 
@@ -150,7 +151,7 @@ function loadFromV2Blob(parsed: PersistedVocabV2): AppStateV3 {
 
 /** Load app state; migrates legacy localStorage keys once. */
 export function loadAppState(): AppStateV3 {
-  const rawApp = localStorage.getItem(K_APP);
+  const rawApp = localStorage.getItem(K_APP) ?? localStorage.getItem(K_APP_LEGACY);
   const parsedApp = safeParse<unknown>(rawApp, null);
   if (isV3(parsedApp)) {
     const libraries: Library[] = [];

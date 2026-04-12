@@ -3,8 +3,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 // getLlmClient reads import.meta.env at call time, so we mock the module
 // and then swap env values per test using vi.stubEnv.
 
-const K_BYOK = 'language-helper:byok-enabled';
-const K_KEY = 'language-helper:api-key';
+const K_BYOK = 'munjang:byok-enabled';
+const K_KEY = 'munjang:api-key';
 
 beforeEach(() => {
   localStorage.clear();

@@ -1,5 +1,5 @@
 <!-- /autoplan restore point: /Users/kenumeda/.gstack/projects/kenumeda1-learn-korean/main-autoplan-restore-20260412-124309.md -->
-# Language Helper — experience plan (design review target)
+# Munjang — experience plan (design review target)
 
 **Last updated:** 2026-04-08  
 **Design system:** `DESIGN.md` (Fluent Sky)

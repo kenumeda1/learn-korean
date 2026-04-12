@@ -1,4 +1,4 @@
-# Design System — Language Helper (Fluent Sky)
+# Design System — Munjang (Fluent Sky)
 
 ## Product Context
 
