@@ -1,3 +1,18 @@
+## Deploy Configuration (configured by /setup-deploy)
+- Platform: Vercel
+- Production URL: https://language-helper-tawny.vercel.app
+- Deploy workflow: auto-deploy on push to main
+- Deploy status command: vercel ls --prod
+- Merge method: merge
+- Project type: web app (Vite + React static site)
+- Post-deploy health check: https://language-helper-tawny.vercel.app
+
+### Custom deploy hooks
+- Pre-merge: npm run build
+- Deploy trigger: automatic on push to main
+- Deploy status: poll production URL
+- Health check: https://language-helper-tawny.vercel.app
+
 ## Design System
 
 Always read `DESIGN.md` before making any visual or UI decisions.
