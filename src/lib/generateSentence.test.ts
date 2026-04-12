@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { generateSentenceFromVocab } from './generateSentence';
+import { generateSentenceFromVocab, shouldPassLibraryTheme } from './generateSentence';
 
 const VALID_RESPONSE = JSON.stringify({
   sentence: 'The apple is red.',
@@ -20,6 +20,20 @@ beforeEach(() => {
 });
 
 const LISTS = { nouns: ['사과'], adjectives: [], verbs: ['먹다'] };
+
+describe('shouldPassLibraryTheme', () => {
+  it('returns false for empty and default My library', () => {
+    expect(shouldPassLibraryTheme(undefined)).toBe(false);
+    expect(shouldPassLibraryTheme('')).toBe(false);
+    expect(shouldPassLibraryTheme('My library')).toBe(false);
+    expect(shouldPassLibraryTheme('  my library  ')).toBe(false);
+  });
+
+  it('returns true for a named topic', () => {
+    expect(shouldPassLibraryTheme('Pizza')).toBe(true);
+    expect(shouldPassLibraryTheme('Travel')).toBe(true);
+  });
+});
 
 describe('generateSentenceFromVocab', () => {
   it('throws if nouns list is empty', async () => {
@@ -42,6 +56,31 @@ describe('generateSentenceFromVocab', () => {
     const result = await generateSentenceFromVocab(LISTS);
     expect(result.sentence).toBe('The apple is red.');
     expect(result.korean_reference).toBe('사과는 빨갛다.');
+  });
+
+  it('includes library theme in the user message when provided', async () => {
+    const completeJson = vi.fn().mockResolvedValue(VALID_RESPONSE);
+    mockGetLlmClient.mockReturnValue({ completeJson });
+
+    await generateSentenceFromVocab(LISTS, { libraryTheme: 'Pizza' });
+
+    const firstCall = completeJson.mock.calls[0];
+    const messages = firstCall[0] as { role: string; content: string }[];
+    const userContent = messages.find((m) => m.role === 'user')?.content ?? '';
+    expect(userContent).toContain('Theme:');
+    expect(userContent).toContain('Pizza');
+  });
+
+  it('includes level in the user message', async () => {
+    const completeJson = vi.fn().mockResolvedValue(VALID_RESPONSE);
+    mockGetLlmClient.mockReturnValue({ completeJson });
+
+    await generateSentenceFromVocab(LISTS, { level: 'beginner' });
+
+    const firstCall = completeJson.mock.calls[0];
+    const messages = firstCall[0] as { role: string; content: string }[];
+    const userContent = messages.find((m) => m.role === 'user')?.content ?? '';
+    expect(userContent).toContain('Beginner');
   });
 
   it('retries once on invalid JSON, succeeds on second call', async () => {

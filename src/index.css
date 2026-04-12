@@ -90,12 +90,10 @@ body {
   color: var(--accent);
 }
 
-/* Same stack as `body` / DESIGN.md — explicit so legal pages never drift from the app shell. */
 .static-page {
   max-width: 640px;
   margin: 0 auto;
   padding: 8px 0 48px;
-  font-family: var(--font-ui);
 }
 
 .static-page__title {
@@ -103,12 +101,10 @@ body {
   margin-bottom: 16px;
 }
 
-/* Match `.hero-one-liner` (subtitle under the main h1). */
 .static-page__body {
-  font-size: 16px;
+  font-size: 15px;
   line-height: 1.6;
-  font-weight: 500;
-  color: #4b5563;
+  color: var(--text);
 }
 
 .static-page__body p {
@@ -1387,6 +1383,84 @@ h1 span {
   box-shadow: var(--shadow);
 }
 
+.library-notice {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0 0 12px;
+  opacity: 0.92;
+}
+
+/* Word card: move to another library — tertiary, below gloss */
+.word-move-details {
+  margin-top: 10px;
+}
+
+.word-move-summary {
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2em;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  color: #9ca3af;
+  letter-spacing: 0.02em;
+  user-select: none;
+  transition: color 0.15s ease;
+}
+
+.word-move-summary::-webkit-details-marker {
+  display: none;
+}
+
+.word-move-summary::marker {
+  content: '';
+}
+
+.word-move-summary:hover {
+  color: var(--muted);
+}
+
+.word-move-details[open] .word-move-summary {
+  color: var(--muted);
+}
+
+.word-move-menu {
+  margin-top: 8px;
+  padding: 4px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.word-move-option {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.word-move-option:hover {
+  background: rgba(15, 23, 42, 0.05);
+}
+
+.word-move-option:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px rgba(37, 99, 235, 0.25);
+}
+
 .card-top {
   display: flex;
   align-items: flex-start;
@@ -1815,6 +1889,48 @@ h1 span {
   line-height: 1.45;
 }
 
+.settings-details {
+  margin-top: 40px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+
+.settings-details summary {
+  list-style: none;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 8px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.settings-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-details summary::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid #9ca3af;
+  border-bottom: 2px solid #9ca3af;
+  transform: rotate(45deg);
+  transition: transform 0.2s ease;
+}
+
+.settings-details[open] summary::after {
+  transform: rotate(-135deg);
+}
+
+.settings-details summary:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: 8px;
+}
+
 .generate-hint {
   max-width: 640px;
   margin: 10px auto 0;
@@ -1824,6 +1940,36 @@ h1 span {
   font-weight: 500;
   color: var(--muted);
   line-height: 1.45;
+}
+
+.settings-body {
+  padding: 8px 0 0;
+}
+
+.settings-hint {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.55;
+  margin: 0 0 12px;
+}
+
+.settings-check {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.settings-check input {
+  margin-top: 3px;
+  accent-color: var(--accent);
+}
+
+.settings-check input:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: 4px;
 }
 
 .field-label {

@@ -2,8 +2,8 @@ import { createAnthropicClient } from './anthropic';
 import { createOpenAiCompatibleClient, createProxyLlmClient } from './openaiCompatible';
 import type { LlmClient } from './types';
 
-const STORAGE_BYOK = 'munjang:byok-enabled';
-const STORAGE_API_KEY = 'munjang:api-key';
+const STORAGE_BYOK = 'language-helper:byok-enabled';
+const STORAGE_API_KEY = 'language-helper:api-key';
 
 function readLocalStorage(key: string): string | null {
   try {
@@ -25,7 +25,7 @@ function isAnthropicKey(key: string): boolean {
 /**
  * Single entry for LLM access (P1 in TODOS.md).
  * - Production-style: set `VITE_LLM_PROXY_PATH` (e.g. `/api/chat`) and implement proxy server.
- * - Dev direct: browser-stored key (see STORAGE_*), or `VITE_OPENAI_API_KEY` / `VITE_ANTHROPIC_API_KEY` in `.env`.
+ * - Dev direct: BYOK in UI, or `VITE_OPENAI_API_KEY` / `VITE_ANTHROPIC_API_KEY` in `.env`.
  * - Claude keys (`sk-ant-...`) use Anthropic automatically unless `VITE_LLM_PROVIDER=openai`.
  */
 export function getLlmClient(): LlmClient {
@@ -42,7 +42,7 @@ export function getLlmClient(): LlmClient {
 
   if (!apiKey) {
     throw new Error(
-      'No API key: set VITE_OPENAI_API_KEY or VITE_ANTHROPIC_API_KEY in your environment, or set VITE_LLM_PROXY_PATH for a same-origin proxy.',
+      'No API key: open "Model access (development)", enable "Store API key in this browser (dev only)", paste your OpenAI or Claude (Anthropic) key; or set VITE_OPENAI_API_KEY or VITE_ANTHROPIC_API_KEY in .env; or set VITE_LLM_PROXY_PATH for a same-origin proxy.',
     );
   }
 

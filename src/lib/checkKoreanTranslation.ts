@@ -3,11 +3,11 @@ import { wordsToPromptLines } from './parseWordList';
 import { getLlmClient } from '../llm/getLlmClient';
 import { translationCheckSchema, type TranslationCheck } from '../schema/translationCheck';
 import type { WordLists } from './generateSentence';
-import { DEFAULT_SENTENCE_TONE, toneBlockForChecker, type SentenceTone } from './sentenceTone';
+import { DEFAULT_SENTENCE_LEVEL, levelBlockForChecker, type SentenceLevel } from './sentenceTone';
 
 const SYSTEM = `You are a Korean tutor. The learner saw an English prompt and wrote Korean.
 Compare their Korean to the reference Korean and whether it expresses the English meaning using the given vocabulary where natural.
-The user message includes an intended tone; judge register and style against that tone, not against a generic formal ideal.
+The user message includes intended difficulty level; judge complexity against that, not a generic ideal.
 Reply with ONLY a JSON object (no markdown):
 {"verdict":"good"|"close"|"needs_work","feedback":"string"}
 Rules:
@@ -22,9 +22,9 @@ function userPayload(
   referenceKorean: string,
   userKorean: string,
   lists: WordLists,
-  tone: SentenceTone,
+  level: SentenceLevel,
 ): string {
-  return `English prompt:\n${englishPrompt}\n\nReference Korean (model):\n${referenceKorean}\n\nLearner's Korean:\n${userKorean}\n\n${toneBlockForChecker(tone)}\n\nVocabulary context:\nNouns:\n${wordsToPromptLines(lists.nouns)}\n\nAdjectives:\n${wordsToPromptLines(lists.adjectives)}\n\nVerbs:\n${wordsToPromptLines(lists.verbs)}\n\nReply with JSON now.`;
+  return `English prompt:\n${englishPrompt}\n\nReference Korean (model):\n${referenceKorean}\n\nLearner's Korean:\n${userKorean}\n\n${levelBlockForChecker(level)}\n\nVocabulary context:\nNouns:\n${wordsToPromptLines(lists.nouns)}\n\nAdjectives:\n${wordsToPromptLines(lists.adjectives)}\n\nVerbs:\n${wordsToPromptLines(lists.verbs)}\n\nReply with JSON now.`;
 }
 
 function validate(raw: string): { ok: true; data: TranslationCheck } | { ok: false; reason: string } {
@@ -44,21 +44,21 @@ export async function checkKoreanTranslation(params: {
   referenceKorean: string;
   userKorean: string;
   lists: WordLists;
-  /** Must match the tone used when the sentence was generated. */
-  tone?: SentenceTone;
+  /** Must match the level used when the sentence was generated. */
+  level?: SentenceLevel;
 }): Promise<TranslationCheck> {
   const trimmed = params.userKorean.trim();
   if (!trimmed) {
     throw new Error('Enter your Korean translation before checking.');
   }
 
-  const tone = params.tone ?? DEFAULT_SENTENCE_TONE;
+  const level = params.level ?? DEFAULT_SENTENCE_LEVEL;
   const user = userPayload(
     params.englishPrompt,
     params.referenceKorean,
     trimmed,
     params.lists,
-    tone,
+    level,
   );
   const client = getLlmClient();
   let raw = await client.completeJson([

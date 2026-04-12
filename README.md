@@ -1,4 +1,4 @@
-# Munjang — Korean Vocabulary & Sentence Practice
+# Language Helper — Korean Vocabulary & Sentence Practice
 
 A personal web app for English speakers learning Korean. Add words you're studying, let AI classify them, generate real Korean practice sentences from your own vocabulary bank, and check your translations with structured feedback.
 
@@ -46,7 +46,7 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:5173](http://localhost:5173) in your browser — that address only works **on your computer** while the dev server is running; it is not the deployed site. For the hosted app, use the **Live app** link at the top of this README.
+Open [http://localhost:5173](http://localhost:5173) in your browser.
 
 ### API key setup
 

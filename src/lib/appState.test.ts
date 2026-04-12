@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   addWord,
   createEmptyLibrary,
+  moveWordBetweenLibraries,
   moveWordToArchive,
   restoreFromArchive,
   restoreSnapshot,
@@ -76,6 +77,49 @@ describe('moveWordToArchive / restoreFromArchive', () => {
     const lib = emptyLib();
     expect(moveWordToArchive(lib, 'nonexistent')).toBe(lib);
     expect(restoreFromArchive(lib, 'nonexistent')).toBe(lib);
+  });
+});
+
+describe('moveWordBetweenLibraries', () => {
+  it('moves a word from one library to another', () => {
+    let a = emptyLib();
+    a = { ...a, name: 'A' };
+    let b = emptyLib();
+    b = { ...b, name: 'B' };
+    a = addWord(a, '사과', 'noun');
+    const wordId = a.words[0].id;
+    const libs = [a, b];
+    const { nextLibraries, error } = moveWordBetweenLibraries(libs, a.id, b.id, wordId);
+    expect(error).toBeUndefined();
+    expect(nextLibraries[0].words).toHaveLength(0);
+    expect(nextLibraries[1].words).toHaveLength(1);
+    expect(nextLibraries[1].words[0].text).toBe('사과');
+    expect(nextLibraries[1].words[0].id).toBe(wordId);
+  });
+
+  it('returns error when target is full and word is new to target', () => {
+    let a = emptyLib();
+    let b = emptyLib();
+    a = addWord(a, '사과', 'noun');
+    const wordId = a.words[0].id;
+    for (let i = 0; i < 100; i++) {
+      b = addWord(b, `w${i}`, 'verb');
+    }
+    expect(b.words).toHaveLength(100);
+    const { error } = moveWordBetweenLibraries([a, b], a.id, b.id, wordId);
+    expect(error).toBe('That library is full.');
+  });
+
+  it('allows move when duplicate text+pos already exists in target (dedupes)', () => {
+    let a = emptyLib();
+    let b = emptyLib();
+    a = addWord(a, '사과', 'noun');
+    b = addWord(b, '사과', 'noun');
+    const wordId = a.words[0].id;
+    const { nextLibraries, error } = moveWordBetweenLibraries([a, b], a.id, b.id, wordId);
+    expect(error).toBeUndefined();
+    expect(nextLibraries[0].words).toHaveLength(0);
+    expect(nextLibraries[1].words).toHaveLength(1);
   });
 });
 

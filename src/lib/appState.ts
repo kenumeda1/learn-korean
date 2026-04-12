@@ -1,5 +1,5 @@
 import type { WordPos } from '../schema/wordClassification';
-import { dedupeWords, type StoredWord } from './wordBank';
+import { bankKey, dedupeWords, MAX_WORDS, type StoredWord } from './wordBank';
 
 export const SNAPSHOT_CAP = 25;
 
@@ -126,4 +126,47 @@ export function purgeArchiveEntry(library: Library, archiveId: string): Library 
 
 export function restoreSnapshot(library: Library, snapshot: LibrarySnapshot): Library {
   return applyWordsWithSnapshots(library, snapshot.words.map(cloneWord));
+}
+
+/**
+ * Move one word from a source library to a target library (updates snapshots on both).
+ * Fails if the target is full and the word is not already represented there (same text+pos).
+ */
+export function moveWordBetweenLibraries(
+  libraries: Library[],
+  sourceLibraryId: string,
+  targetLibraryId: string,
+  wordId: string,
+): { nextLibraries: Library[]; error?: string } {
+  if (sourceLibraryId === targetLibraryId) {
+    return { nextLibraries: libraries, error: 'Choose a different library.' };
+  }
+  const srcIdx = libraries.findIndex((l) => l.id === sourceLibraryId);
+  const tgtIdx = libraries.findIndex((l) => l.id === targetLibraryId);
+  if (srcIdx === -1 || tgtIdx === -1) {
+    return { nextLibraries: libraries, error: 'Library not found.' };
+  }
+  const source = libraries[srcIdx];
+  const target = libraries[tgtIdx];
+  const word = source.words.find((w) => w.id === wordId);
+  if (!word) {
+    return { nextLibraries: libraries, error: 'Word not found.' };
+  }
+
+  const key = bankKey(word.text, word.pos);
+  const alreadyInTarget = target.words.some((w) => bankKey(w.text, w.pos) === key);
+  if (!alreadyInTarget && target.words.length >= MAX_WORDS) {
+    return { nextLibraries: libraries, error: 'That library is full.' };
+  }
+
+  const nextSourceWords = source.words.filter((w) => w.id !== wordId);
+  const sourceLib = applyWordsWithSnapshots(source, nextSourceWords);
+
+  const nextTargetWords = [...target.words, cloneWord(word)];
+  const targetLib = applyWordsWithSnapshots(target, nextTargetWords);
+
+  const next = [...libraries];
+  next[srcIdx] = sourceLib;
+  next[tgtIdx] = targetLib;
+  return { nextLibraries: next };
 }

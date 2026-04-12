@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { classifyKoreanWord } from './lib/classifyWord';
 import { checkKoreanTranslation } from './lib/checkKoreanTranslation';
-import { generateSentenceFromVocab } from './lib/generateSentence';
+import { generateSentenceFromVocab, shouldPassLibraryTheme } from './lib/generateSentence';
 import {
   addWord,
   createEmptyLibrary,
+  moveWordBetweenLibraries,
   moveWordToArchive,
   purgeArchiveEntry,
   restoreFromArchive,
@@ -23,7 +24,7 @@ import {
   type HistoryEntry,
 } from './lib/storage';
 
-const LS_HERO_RETURNING = 'mj_hero_returning';
+const LS_HERO_RETURNING = 'lh_hero_returning';
 
 function readHeroReturning(): boolean {
   try {
@@ -56,17 +57,22 @@ function recentEnglishPromptsFromHistory(history: HistoryEntry[]): string[] {
   return out;
 }
 import {
-  DEFAULT_SENTENCE_TONE,
-  LS_SENTENCE_TONE_KEY,
-  parseSentenceTone,
-  SENTENCE_TONE_LABELS,
-  SENTENCE_TONES,
-  type SentenceTone,
+  DEFAULT_SENTENCE_LEVEL,
+  LS_SENTENCE_LEVEL_KEY,
+  levelFromHistoryEntry,
+  parseLegacyToneStorage,
+  parseSentenceLevel,
+  SENTENCE_LEVEL_LABELS,
+  SENTENCE_LEVELS,
+  type SentenceLevel,
 } from './lib/sentenceTone';
+
+const LS_SENTENCE_TONE_KEY_LEGACY = 'language-helper:sentence-tone';
 import { MAX_WORDS, wordListsFromBank, type StoredWord } from './lib/wordBank';
 import type { SentenceGeneration } from './schema/sentenceGeneration';
 import type { TranslationCheck } from './schema/translationCheck';
 import type { WordClassification, WordPos } from './schema/wordClassification';
+import { llmStorageKeys } from './llm/getLlmClient';
 import { AboutPage, ContactPage, PrivacyPage, TermsPage } from './StaticPages';
 
 const CLASSIFY_DEBOUNCE_MS = 420;
@@ -257,12 +263,23 @@ export default function App() {
   const [classifyError, setClassifyError] = useState<string | null>(null);
   const [addHint, setAddHint] = useState<string | null>(null);
 
-  const [sentenceTone, setSentenceTone] = useState<SentenceTone>(() => {
+  const [byokEnabled, setByokEnabled] = useState(false);
+  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [sentenceLevel, setSentenceLevel] = useState<SentenceLevel>(() => {
     try {
-      if (typeof localStorage === 'undefined') return DEFAULT_SENTENCE_TONE;
-      return parseSentenceTone(localStorage.getItem(LS_SENTENCE_TONE_KEY));
+      if (typeof localStorage === 'undefined') return DEFAULT_SENTENCE_LEVEL;
+      const stored = localStorage.getItem(LS_SENTENCE_LEVEL_KEY);
+      if (stored) return parseSentenceLevel(stored);
+      const legacy = localStorage.getItem(LS_SENTENCE_TONE_KEY_LEGACY);
+      if (legacy) {
+        const lv = parseLegacyToneStorage(legacy);
+        localStorage.setItem(LS_SENTENCE_LEVEL_KEY, lv);
+        localStorage.removeItem(LS_SENTENCE_TONE_KEY_LEGACY);
+        return lv;
+      }
+      return DEFAULT_SENTENCE_LEVEL;
     } catch {
-      return DEFAULT_SENTENCE_TONE;
+      return DEFAULT_SENTENCE_LEVEL;
     }
   });
   const [generating, setGenerating] = useState(false);
@@ -284,6 +301,7 @@ export default function App() {
   const [classifyReportThanks, setClassifyReportThanks] = useState(false);
   const [sitePage, setSitePage] = useState<SitePage>('home');
   const [howItWorksOpen, setHowItWorksOpen] = useState(() => !readHeroReturning());
+  const [libraryNotice, setLibraryNotice] = useState<string | null>(null);
 
   const wordInputRef = useRef<HTMLInputElement>(null);
   const newLibraryInputRef = useRef<HTMLInputElement>(null);
@@ -294,6 +312,7 @@ export default function App() {
   const classifiedForRef = useRef<string | null>(null);
   const inFlightTokenRef = useRef<string | null>(null);
   const classifyAbortRef = useRef<AbortController | null>(null);
+  const libraryNoticeTimeoutRef = useRef(0);
   const appStateRef = useRef(appState);
   appStateRef.current = appState;
 
@@ -313,15 +332,26 @@ export default function App() {
 
   useEffect(() => {
     setHistory(loadHistory());
+    setByokEnabled(localStorage.getItem(llmStorageKeys.byokEnabled) === 'true');
+    const k = localStorage.getItem(llmStorageKeys.apiKey);
+    if (k) setApiKeyInput(k);
   }, []);
 
   useEffect(() => {
     try {
-      localStorage.setItem(LS_SENTENCE_TONE_KEY, sentenceTone);
+      localStorage.setItem(LS_SENTENCE_LEVEL_KEY, sentenceLevel);
     } catch {
       /* ignore quota / private mode */
     }
-  }, [sentenceTone]);
+  }, [sentenceLevel]);
+
+  useEffect(() => {
+    try {
+      localStorage.removeItem('language-helper:sentence-tense');
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   useEffect(() => {
     saveAppState(appState);
@@ -332,6 +362,16 @@ export default function App() {
     setClassifyReportNote('');
     setClassifyReportThanks(false);
   }, [wordInput]);
+
+  useEffect(() => {
+    localStorage.setItem(llmStorageKeys.byokEnabled, byokEnabled ? 'true' : 'false');
+    if (byokEnabled && apiKeyInput) {
+      localStorage.setItem(llmStorageKeys.apiKey, apiKeyInput);
+    }
+    if (!byokEnabled) {
+      localStorage.removeItem(llmStorageKeys.apiKey);
+    }
+  }, [byokEnabled, apiKeyInput]);
 
   const updateActiveLibrary = useCallback((fn: (lib: Library) => Library) => {
     setAppState((prev) => ({
@@ -347,6 +387,11 @@ export default function App() {
     if (gridFilter !== 'all') rows = rows.filter((w) => w.pos === gridFilter);
     return rows;
   }, [wordBank, gridFilter]);
+
+  const otherLibraries = useMemo(
+    () => appState.libraries.filter((l) => l.id !== appState.activeLibraryId),
+    [appState.libraries, appState.activeLibraryId],
+  );
 
   const canGenerate = lists.nouns.length > 0 && lists.verbs.length > 0 && !generating;
   const generateHint = useMemo(() => listsBlockedHint(lists), [lists]);
@@ -481,17 +526,19 @@ export default function App() {
     const sid = appStateRef.current.activeLibraryId;
     const lib = appStateRef.current.libraries.find((l) => l.id === sid);
     const libName = lib?.name ?? 'Library';
+    const libraryTheme = shouldPassLibraryTheme(libName) ? libName : undefined;
     setGenerating(true);
     try {
       const result = await generateSentenceFromVocab(lists, {
         recentEnglishPrompts: recentEnglishPromptsFromHistory(history),
-        tone: sentenceTone,
+        level: sentenceLevel,
+        libraryTheme,
       });
       const entry: HistoryEntry = {
         id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : String(Date.now()),
         ts: Date.now(),
         result,
-        tone: sentenceTone,
+        sentenceLevel,
         libraryId: sid,
         libraryName: libName,
       };
@@ -504,7 +551,7 @@ export default function App() {
     } finally {
       setGenerating(false);
     }
-  }, [lists, history, sentenceTone]);
+  }, [lists, history, sentenceLevel]);
 
   const onCheckTranslation = useCallback(
     async (entryId: string) => {
@@ -519,12 +566,13 @@ export default function App() {
       setCheckingId(entryId);
       setError(null);
       try {
+        const level = levelFromHistoryEntry(h);
         const out = await checkKoreanTranslation({
           englishPrompt: h.result.sentence,
           referenceKorean: ref,
           userKorean: text,
           lists,
-          tone: parseSentenceTone(h.tone),
+          level,
         });
         setCheckById((prev) => ({ ...prev, [entryId]: out }));
       } catch (e) {
@@ -564,6 +612,28 @@ export default function App() {
   const removeWord = useCallback((id: string) => {
     updateActiveLibrary((lib) => moveWordToArchive(lib, id));
   }, [updateActiveLibrary]);
+
+  const onMoveWordToLibrary = useCallback((wordId: string, targetLibraryId: string) => {
+    setAppState((prev) => {
+      const { nextLibraries, error } = moveWordBetweenLibraries(
+        prev.libraries,
+        prev.activeLibraryId,
+        targetLibraryId,
+        wordId,
+      );
+      if (error) {
+        queueMicrotask(() => setLibraryNotice(error));
+        return prev;
+      }
+      const name = nextLibraries.find((l) => l.id === targetLibraryId)?.name ?? 'Library';
+      queueMicrotask(() => {
+        window.clearTimeout(libraryNoticeTimeoutRef.current);
+        setLibraryNotice(`Moved to “${name}”.`);
+        libraryNoticeTimeoutRef.current = window.setTimeout(() => setLibraryNotice(null), 4000);
+      });
+      return { ...prev, libraries: nextLibraries };
+    });
+  }, []);
 
   const onSelectLibrary = useCallback((id: string) => {
     setAppState((prev) => ({ ...prev, activeLibraryId: id }));
@@ -1030,6 +1100,12 @@ export default function App() {
         </div>
       </div>
 
+      {libraryNotice ? (
+        <p className="library-notice" role="status">
+          {libraryNotice}
+        </p>
+      ) : null}
+
       <div className="grid">
         {filteredBank.length === 0 ? (
           <p className="grid-empty">No words in this view. Add a word above.</p>
@@ -1046,24 +1122,48 @@ export default function App() {
               <p className="word-en" lang="en">
                 {w.en ? formatWordEnGloss(w.en) : '—'}
               </p>
+              {otherLibraries.length > 0 ? (
+                <details className="word-move-details">
+                  <summary className="word-move-summary">
+                    <span className="sr-only">Move this word to another library. </span>
+                    Move to…
+                  </summary>
+                  <div className="word-move-menu">
+                    {otherLibraries.map((lib) => (
+                      <button
+                        key={lib.id}
+                        type="button"
+                        className="word-move-option"
+                        onClick={(e) => {
+                          onMoveWordToLibrary(w.id, lib.id);
+                          const d = e.currentTarget.closest('details');
+                          if (d) d.open = false;
+                        }}
+                      >
+                        {lib.name}
+                      </button>
+                    ))}
+                  </div>
+                </details>
+              ) : null}
             </article>
           ))
         )}
       </div>
 
-      <div className="tone-field" role="group" aria-label="Sentence tone">
-        <label htmlFor="sentence-tone" className="tone-field__label">
-          Tone
+      <div className="tone-field" role="group" aria-label="Sentence level">
+        <label htmlFor="sentence-level" className="tone-field__label">
+          Level
         </label>
         <select
-          id="sentence-tone"
+          id="sentence-level"
           className="tone-field__select compact-select"
-          value={sentenceTone}
-          onChange={(e) => setSentenceTone(parseSentenceTone(e.target.value))}
+          value={sentenceLevel}
+          onChange={(e) => setSentenceLevel(parseSentenceLevel(e.target.value))}
         >
-          {SENTENCE_TONES.map((t) => (
+          {SENTENCE_LEVELS.map((t) => (
             <option key={t} value={t}>
-              {SENTENCE_TONE_LABELS[t]}
+              {SENTENCE_LEVEL_LABELS[t]}
             </option>
           ))}
         </select>
@@ -1115,6 +1215,8 @@ export default function App() {
       ) : (
         <div className="grid history-grid">
           {history.map((h, index) => {
+            const histLevel = levelFromHistoryEntry(h);
+            const showLevel = histLevel !== DEFAULT_SENTENCE_LEVEL;
             return (
             <article
               key={h.id}
@@ -1130,7 +1232,7 @@ export default function App() {
                   <RemoveIcon />
                 </button>
               </div>
-              {h.libraryName || h.themeLabel || index === 0 || (h.tone && h.tone !== 'balanced') ? (
+              {h.libraryName || h.themeLabel || index === 0 || showLevel ? (
                 <p className="history-meta">
                   {h.libraryName ? <span className="history-lib">{h.libraryName}</span> : null}
                   {h.themeLabel ? (
@@ -1140,10 +1242,10 @@ export default function App() {
                     </span>
                   ) : null}
                   {index === 0 ? <span className="history-latest">Latest</span> : null}
-                  {h.tone && h.tone !== 'balanced' ? (
+                  {showLevel ? (
                     <>
                       {h.libraryName || h.themeLabel || index === 0 ? <span> · </span> : null}
-                      <span className="history-tone">{SENTENCE_TONE_LABELS[parseSentenceTone(h.tone)]}</span>
+                      <span className="history-tone">{SENTENCE_LEVEL_LABELS[histLevel]}</span>
                     </>
                   ) : null}
                 </p>
@@ -1254,6 +1356,37 @@ export default function App() {
           })}
         </div>
       )}
+
+      <details className="settings-details">
+        <summary>Model access (development)</summary>
+        <div className="settings-body">
+          <p className="settings-hint">
+            Same-origin proxy: <span className="mono">VITE_LLM_PROXY_PATH</span>. Or put{' '}
+            <span className="mono">VITE_OPENAI_API_KEY</span> or <span className="mono">VITE_ANTHROPIC_API_KEY</span> in{' '}
+            <span className="mono">.env</span>. Claude (Anthropic) keys start with <span className="mono">sk-ant</span>
+            {', '}the app uses Anthropic automatically when you paste one below. Local browser storage is dev only.
+          </p>
+          <label className="settings-check">
+            <input type="checkbox" checked={byokEnabled} onChange={(e) => setByokEnabled(e.target.checked)} />
+            <span>Store API key in this browser (dev only)</span>
+          </label>
+          {byokEnabled ? (
+            <>
+              <label className="field-label" htmlFor="api-key">
+                API key
+              </label>
+              <input
+                id="api-key"
+                className="field-input"
+                type="password"
+                autoComplete="off"
+                value={apiKeyInput}
+                onChange={(e) => setApiKeyInput(e.target.value)}
+              />
+            </>
+          ) : null}
+        </div>
+      </details>
 
       <p className="note">
         {wordBank.length} / {MAX_WORDS} words in “{activeLibrary?.name}” · generation uses all words in this library

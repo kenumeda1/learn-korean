@@ -1,5 +1,5 @@
 import type { SentenceGeneration } from '../schema/sentenceGeneration';
-import type { SentenceTone } from './sentenceTone';
+import type { SentenceLevel } from './sentenceTone';
 import { parseWordList } from './parseWordList';
 import { dedupeWords, type StoredWord } from './wordBank';
 import type { WordPos } from '../schema/wordClassification';
@@ -12,11 +12,10 @@ import {
   normalizeStoredWord,
 } from './appState';
 
-const K_APP = 'munjang:app';
-const K_APP_LEGACY = 'language-helper:app';
+const K_APP = 'language-helper:app';
 const K_VOCAB_LEGACY = 'language-helper:vocab';
-const K_HISTORY = 'munjang:history';
-const K_CLASSIFY_REPORTS = 'munjang:classify-reports';
+const K_HISTORY = 'language-helper:history';
+const K_CLASSIFY_REPORTS = 'language-helper:classify-reports';
 const HISTORY_MAX = 20;
 const CLASSIFY_REPORTS_MAX = 40;
 
@@ -36,8 +35,10 @@ export type HistoryEntry = {
   id: string;
   ts: number;
   result: SentenceGeneration;
-  /** Tone used when this sentence was generated (for Check). Omitted on older entries → balanced. */
-  tone?: SentenceTone;
+  /** Level when this sentence was generated (for Check). */
+  sentenceLevel?: SentenceLevel;
+  /** @deprecated Old single preset; use sentenceLevel */
+  tone?: string;
   libraryId?: string;
   libraryName?: string;
   themeId?: string;
@@ -151,7 +152,7 @@ function loadFromV2Blob(parsed: PersistedVocabV2): AppStateV3 {
 
 /** Load app state; migrates legacy localStorage keys once. */
 export function loadAppState(): AppStateV3 {
-  const rawApp = localStorage.getItem(K_APP) ?? localStorage.getItem(K_APP_LEGACY);
+  const rawApp = localStorage.getItem(K_APP);
   const parsedApp = safeParse<unknown>(rawApp, null);
   if (isV3(parsedApp)) {
     const libraries: Library[] = [];
