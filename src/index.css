@@ -90,10 +90,12 @@ body {
   color: var(--accent);
 }
 
+/* Same stack as `body` / DESIGN.md — explicit so legal pages never drift from the app shell. */
 .static-page {
   max-width: 640px;
   margin: 0 auto;
   padding: 8px 0 48px;
+  font-family: var(--font-ui);
 }
 
 .static-page__title {
@@ -101,10 +103,12 @@ body {
   margin-bottom: 16px;
 }
 
+/* Match `.hero-one-liner` (subtitle under the main h1). */
 .static-page__body {
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.6;
-  color: var(--text);
+  font-weight: 500;
+  color: #4b5563;
 }
 
 .static-page__body p {
