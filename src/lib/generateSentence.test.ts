@@ -80,7 +80,7 @@ describe('generateSentenceFromVocab', () => {
     const firstCall = completeJson.mock.calls[0];
     const messages = firstCall[0] as { role: string; content: string }[];
     const userContent = messages.find((m) => m.role === 'user')?.content ?? '';
-    expect(userContent).toContain('Beginner');
+    expect(userContent).toContain('beginner');
   });
 
   it('retries once on invalid JSON, succeeds on second call', async () => {

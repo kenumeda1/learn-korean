@@ -57,17 +57,15 @@ function recentEnglishPromptsFromHistory(history: HistoryEntry[]): string[] {
   return out;
 }
 import {
-  DEFAULT_SENTENCE_LEVEL,
+  DEFAULT_SENTENCE_TONE,
   LS_SENTENCE_LEVEL_KEY,
+  LS_SENTENCE_TONE_KEY,
+  SENTENCE_TONE_LABELS,
+  SENTENCE_TONES,
   levelFromHistoryEntry,
-  parseLegacyToneStorage,
-  parseSentenceLevel,
-  SENTENCE_LEVEL_LABELS,
-  SENTENCE_LEVELS,
-  type SentenceLevel,
+  parseSentenceTone,
+  type SentenceTone,
 } from './lib/sentenceTone';
-
-const LS_SENTENCE_TONE_KEY_LEGACY = 'language-helper:sentence-tone';
 import { MAX_WORDS, wordListsFromBank, type StoredWord } from './lib/wordBank';
 import type { SentenceGeneration } from './schema/sentenceGeneration';
 import type { TranslationCheck } from './schema/translationCheck';
@@ -265,21 +263,21 @@ export default function App() {
 
   const [byokEnabled, setByokEnabled] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState('');
-  const [sentenceLevel, setSentenceLevel] = useState<SentenceLevel>(() => {
+  const [sentenceTone, setSentenceTone] = useState<SentenceTone>(() => {
     try {
-      if (typeof localStorage === 'undefined') return DEFAULT_SENTENCE_LEVEL;
-      const stored = localStorage.getItem(LS_SENTENCE_LEVEL_KEY);
-      if (stored) return parseSentenceLevel(stored);
-      const legacy = localStorage.getItem(LS_SENTENCE_TONE_KEY_LEGACY);
-      if (legacy) {
-        const lv = parseLegacyToneStorage(legacy);
-        localStorage.setItem(LS_SENTENCE_LEVEL_KEY, lv);
-        localStorage.removeItem(LS_SENTENCE_TONE_KEY_LEGACY);
-        return lv;
+      if (typeof localStorage === 'undefined') return DEFAULT_SENTENCE_TONE;
+      const fromTone = localStorage.getItem(LS_SENTENCE_TONE_KEY);
+      if (fromTone) return parseSentenceTone(fromTone);
+      const fromLevel = localStorage.getItem(LS_SENTENCE_LEVEL_KEY);
+      if (fromLevel) {
+        const v = parseSentenceTone(fromLevel);
+        localStorage.setItem(LS_SENTENCE_TONE_KEY, v);
+        localStorage.removeItem(LS_SENTENCE_LEVEL_KEY);
+        return v;
       }
-      return DEFAULT_SENTENCE_LEVEL;
+      return DEFAULT_SENTENCE_TONE;
     } catch {
-      return DEFAULT_SENTENCE_LEVEL;
+      return DEFAULT_SENTENCE_TONE;
     }
   });
   const [generating, setGenerating] = useState(false);
@@ -339,11 +337,11 @@ export default function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(LS_SENTENCE_LEVEL_KEY, sentenceLevel);
+      localStorage.setItem(LS_SENTENCE_TONE_KEY, sentenceTone);
     } catch {
       /* ignore quota / private mode */
     }
-  }, [sentenceLevel]);
+  }, [sentenceTone]);
 
   useEffect(() => {
     try {
@@ -531,14 +529,14 @@ export default function App() {
     try {
       const result = await generateSentenceFromVocab(lists, {
         recentEnglishPrompts: recentEnglishPromptsFromHistory(history),
-        level: sentenceLevel,
+        level: sentenceTone,
         libraryTheme,
       });
       const entry: HistoryEntry = {
         id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : String(Date.now()),
         ts: Date.now(),
         result,
-        sentenceLevel,
+        sentenceLevel: sentenceTone,
         libraryId: sid,
         libraryName: libName,
       };
@@ -551,7 +549,7 @@ export default function App() {
     } finally {
       setGenerating(false);
     }
-  }, [lists, history, sentenceLevel]);
+  }, [lists, history, sentenceTone]);
 
   const onCheckTranslation = useCallback(
     async (entryId: string) => {
@@ -1151,19 +1149,19 @@ export default function App() {
         )}
       </div>
 
-      <div className="tone-field" role="group" aria-label="Sentence level">
-        <label htmlFor="sentence-level" className="tone-field__label">
-          Level
+      <div className="tone-field" role="group" aria-label="Sentence tone">
+        <label htmlFor="sentence-tone" className="tone-field__label">
+          Tone
         </label>
         <select
-          id="sentence-level"
+          id="sentence-tone"
           className="tone-field__select compact-select"
-          value={sentenceLevel}
-          onChange={(e) => setSentenceLevel(parseSentenceLevel(e.target.value))}
+          value={sentenceTone}
+          onChange={(e) => setSentenceTone(parseSentenceTone(e.target.value))}
         >
-          {SENTENCE_LEVELS.map((t) => (
+          {SENTENCE_TONES.map((t) => (
             <option key={t} value={t}>
-              {SENTENCE_LEVEL_LABELS[t]}
+              {SENTENCE_TONE_LABELS[t]}
             </option>
           ))}
         </select>
@@ -1216,7 +1214,7 @@ export default function App() {
         <div className="grid history-grid">
           {history.map((h, index) => {
             const histLevel = levelFromHistoryEntry(h);
-            const showLevel = histLevel !== DEFAULT_SENTENCE_LEVEL;
+            const showLevel = histLevel !== DEFAULT_SENTENCE_TONE;
             return (
             <article
               key={h.id}
@@ -1245,7 +1243,7 @@ export default function App() {
                   {showLevel ? (
                     <>
                       {h.libraryName || h.themeLabel || index === 0 ? <span> · </span> : null}
-                      <span className="history-tone">{SENTENCE_LEVEL_LABELS[histLevel]}</span>
+                      <span className="history-tone">{SENTENCE_TONE_LABELS[histLevel]}</span>
                     </>
                   ) : null}
                 </p>

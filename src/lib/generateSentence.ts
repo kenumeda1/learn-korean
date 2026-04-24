@@ -2,7 +2,7 @@ import { extractJsonObjectText } from './extractJson';
 import { wordsToPromptLines } from './parseWordList';
 import { getLlmClient } from '../llm/getLlmClient';
 import { sentenceGenerationSchema, type SentenceGeneration } from '../schema/sentenceGeneration';
-import { DEFAULT_SENTENCE_LEVEL, levelBlockForGeneration, type SentenceLevel } from './sentenceTone';
+import { DEFAULT_SENTENCE_TONE, levelBlockForGeneration, type SentenceTone } from './sentenceTone';
 
 export type WordLists = {
   nouns: string[];
@@ -38,8 +38,8 @@ LIBRARY THEME (when the user message includes a "Theme" section):
 export type GenerateSentenceOptions = {
   /** Recent English prompts from this session; model should avoid same framing. */
   recentEnglishPrompts?: string[];
-  /** Difficulty: beginner / mid / advanced. Defaults to mid. */
-  level?: SentenceLevel;
+  /** Style preset: beginner / medium / native / humorous. Defaults to medium. */
+  level?: SentenceTone;
   /**
    * Library theme label (usually the library name). When set, sentences anchor on this topic.
    * Omit for generic names like "My library" — see `shouldPassLibraryTheme`.
@@ -57,7 +57,7 @@ export function shouldPassLibraryTheme(name: string | undefined): boolean {
 function userPayload(
   lists: WordLists,
   recentEnglishPrompts: string[] | undefined,
-  level: SentenceLevel,
+  level: SentenceTone,
   libraryTheme: string | undefined,
 ): string {
   const vocab = `Nouns:\n${wordsToPromptLines(lists.nouns)}\n\nAdjectives:\n${wordsToPromptLines(
@@ -112,7 +112,7 @@ export async function generateSentenceFromVocab(
     throw new Error('Add at least one noun and one verb before generating.');
   }
 
-  const level = options?.level ?? DEFAULT_SENTENCE_LEVEL;
+  const level = options?.level ?? DEFAULT_SENTENCE_TONE;
   const user = userPayload(lists, options?.recentEnglishPrompts, level, options?.libraryTheme);
   const client = getLlmClient();
   let raw = await client.completeJson([

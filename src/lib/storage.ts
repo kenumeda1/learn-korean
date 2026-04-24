@@ -1,5 +1,5 @@
 import type { SentenceGeneration } from '../schema/sentenceGeneration';
-import type { SentenceLevel } from './sentenceTone';
+import type { SentenceTone } from './sentenceTone';
 import { parseWordList } from './parseWordList';
 import { dedupeWords, type StoredWord } from './wordBank';
 import type { WordPos } from '../schema/wordClassification';
@@ -35,8 +35,8 @@ export type HistoryEntry = {
   id: string;
   ts: number;
   result: SentenceGeneration;
-  /** Level when this sentence was generated (for Check). */
-  sentenceLevel?: SentenceLevel;
+  /** Preset (tone) when this sentence was generated (for Check). */
+  sentenceLevel?: SentenceTone;
   /** @deprecated Old single preset; use sentenceLevel */
   tone?: string;
   libraryId?: string;

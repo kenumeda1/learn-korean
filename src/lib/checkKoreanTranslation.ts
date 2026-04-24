@@ -3,7 +3,7 @@ import { wordsToPromptLines } from './parseWordList';
 import { getLlmClient } from '../llm/getLlmClient';
 import { translationCheckSchema, type TranslationCheck } from '../schema/translationCheck';
 import type { WordLists } from './generateSentence';
-import { DEFAULT_SENTENCE_LEVEL, levelBlockForChecker, type SentenceLevel } from './sentenceTone';
+import { DEFAULT_SENTENCE_TONE, levelBlockForChecker, type SentenceTone } from './sentenceTone';
 
 const SYSTEM = `You are a Korean tutor. The learner saw an English prompt and wrote Korean.
 Compare their Korean to the reference Korean and whether it expresses the English meaning using the given vocabulary where natural.
@@ -22,7 +22,7 @@ function userPayload(
   referenceKorean: string,
   userKorean: string,
   lists: WordLists,
-  level: SentenceLevel,
+  level: SentenceTone,
 ): string {
   return `English prompt:\n${englishPrompt}\n\nReference Korean (model):\n${referenceKorean}\n\nLearner's Korean:\n${userKorean}\n\n${levelBlockForChecker(level)}\n\nVocabulary context:\nNouns:\n${wordsToPromptLines(lists.nouns)}\n\nAdjectives:\n${wordsToPromptLines(lists.adjectives)}\n\nVerbs:\n${wordsToPromptLines(lists.verbs)}\n\nReply with JSON now.`;
 }
@@ -45,14 +45,14 @@ export async function checkKoreanTranslation(params: {
   userKorean: string;
   lists: WordLists;
   /** Must match the level used when the sentence was generated. */
-  level?: SentenceLevel;
+  level?: SentenceTone;
 }): Promise<TranslationCheck> {
   const trimmed = params.userKorean.trim();
   if (!trimmed) {
     throw new Error('Enter your Korean translation before checking.');
   }
 
-  const level = params.level ?? DEFAULT_SENTENCE_LEVEL;
+  const level = params.level ?? DEFAULT_SENTENCE_TONE;
   const user = userPayload(
     params.englishPrompt,
     params.referenceKorean,
