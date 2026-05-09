@@ -4,12 +4,22 @@ import {
   levelFromHistoryEntry,
   parseLegacyToneStorage,
   parseSentenceTone,
+  SENTENCE_TONE_LABELS,
+  SENTENCE_TONES,
 } from './sentenceTone';
 
 describe('parseSentenceTone', () => {
   it('defaults unknown to medium', () => {
     expect(parseSentenceTone(null)).toBe(DEFAULT_SENTENCE_TONE);
     expect(parseSentenceTone('')).toBe(DEFAULT_SENTENCE_TONE);
+    expect(parseSentenceTone('unknown')).toBe(DEFAULT_SENTENCE_TONE);
+  });
+
+  it('parses all current tones correctly', () => {
+    SENTENCE_TONES.forEach((tone) => {
+      expect(parseSentenceTone(tone)).toBe(tone);
+      expect(parseSentenceTone(SENTENCE_TONE_LABELS[tone])).toBe(tone);
+    });
   });
 });
 

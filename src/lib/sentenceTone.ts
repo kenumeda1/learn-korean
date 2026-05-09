@@ -10,10 +10,10 @@ export const LS_SENTENCE_TONE_KEY = 'language-helper:sentence-tone';
 export const LS_SENTENCE_LEVEL_KEY = 'language-helper:sentence-level';
 
 export const SENTENCE_TONE_LABELS: Record<SentenceTone, string> = {
-  beginner: 'beginner',
-  medium: 'medium',
-  native: 'native',
-  humorous: 'humorous',
+  beginner: 'Beginner',
+  medium: 'Medium',
+  native: 'Native',
+  humorous: 'Humorous',
 };
 
 function isSentenceTone(s: string): s is SentenceTone {
